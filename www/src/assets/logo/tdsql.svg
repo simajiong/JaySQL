@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="256" viewBox="0 0 1024 256" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <title>TDSQL</title>
+  <path
+    d="M66 148c0-34 28-62 62-62c18 0 34 7 46 19c12-12 28-19 46-19c34 0 62 28 62 62c0 26-16 49-39 58H105c-23-9-39-32-39-58z"
+    fill="#006EFF"
+    fill-opacity="0.12"
+  />
+  <path d="M98 180h152" stroke="#006EFF" stroke-width="18" stroke-linecap="round"/>
+  <text
+    x="318"
+    y="166"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="122"
+    font-weight="700"
+    fill="#006EFF"
+  >TDSQL</text>
+</svg>

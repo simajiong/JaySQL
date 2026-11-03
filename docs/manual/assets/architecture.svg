@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 430" width="860" height="430" role="img" aria-label="JaySQL 分层架构图">
+  <defs>
+    <linearGradient id="gp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#14a08f"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9aa8b8"/>
+    </marker>
+  </defs>
+
+  <!-- 接入层 -->
+  <rect x="40" y="14" width="780" height="58" rx="10" fill="#eef4f3" stroke="#cfe0dd"/>
+  <text x="58" y="34" font-size="12" fill="#0f766e" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">接入层</text>
+  <rect x="60" y="42" width="220" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="170" y="58" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">Web 控制台（Vue3 + Ant Design Vue）</text>
+  <rect x="292" y="42" width="190" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="387" y="58" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">REST API</text>
+  <rect x="494" y="42" width="180" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="584" y="58" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">AI 助手（大模型接入）</text>
+  <rect x="686" y="42" width="120" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="746" y="58" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">工单与审批</text>
+
+  <!-- 应用层 -->
+  <rect x="40" y="90" width="780" height="106" rx="10" fill="#eaf2f7" stroke="#cddde8"/>
+  <text x="58" y="110" font-size="12" fill="#1677ff" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">应用层（Go + Gin + GORM）</text>
+  <rect x="60" y="118" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="145" y="134" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">SQL 工作台 / 规范预审</text>
+  <rect x="60" y="148" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="145" y="164" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">工单编排与执行器</text>
+  <rect x="242" y="118" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="327" y="134" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">备份调度 / 恢复编排</text>
+  <rect x="242" y="148" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="327" y="164" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">指标采集与告警决策</text>
+  <rect x="424" y="118" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="509" y="134" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">慢日志与快照分析</text>
+  <rect x="424" y="148" width="170" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="509" y="164" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">审计与权限</text>
+  <rect x="606" y="118" width="200" height="54" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="706" y="140" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">定时任务（cron）</text>
+  <text x="706" y="158" font-size="11" text-anchor="middle" fill="#4f6470" font-family="PingFang SC, Microsoft YaHei, sans-serif">同步元数据 / 慢日志 / 告警</text>
+
+  <!-- 数据层 -->
+  <rect x="40" y="212" width="780" height="62" rx="10" fill="#f6f2ea" stroke="#e3dccd"/>
+  <text x="58" y="232" font-size="12" fill="#a86b00" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">数据层</text>
+  <rect x="60" y="240" width="240" height="26" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="180" y="257" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">元数据库（MySQL）— 实例 / 任务 / 审计</text>
+  <rect x="312" y="240" width="200" height="26" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="412" y="257" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">指标库（Prometheus）</text>
+  <rect x="524" y="240" width="280" height="26" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="664" y="257" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">存储目标（本地 / OSS / COS / OBS / MinIO）</text>
+
+  <!-- 执行层 -->
+  <rect x="40" y="290" width="380" height="92" rx="10" fill="#f0f5f2" stroke="#cfe0dd"/>
+  <text x="58" y="310" font-size="12" fill="#0f766e" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">执行层</text>
+  <rect x="60" y="318" width="340" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="230" y="334" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">backup-agent（部署在数据库主机，拉任务执行）</text>
+  <rect x="60" y="348" width="340" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="230" y="364" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">mysqldump / pg_dump / xtrabackup / pgbackrest</text>
+
+  <!-- 采集层 -->
+  <rect x="440" y="290" width="380" height="92" rx="10" fill="#f0f5f2" stroke="#cfe0dd"/>
+  <text x="458" y="310" font-size="12" fill="#0f766e" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">采集层</text>
+  <rect x="460" y="318" width="340" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="630" y="334" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">node_exporter（主机资源）+ 数据库采集 SQL</text>
+  <rect x="460" y="348" width="340" height="24" rx="6" fill="#fff" stroke="#d9e1e6"/>
+  <text x="630" y="364" font-size="11.5" text-anchor="middle" fill="#243947" font-family="PingFang SC, Microsoft YaHei, sans-serif">慢日志采集器 / 负载快照</text>
+
+  <!-- 被管数据库 -->
+  <rect x="40" y="398" width="780" height="26" rx="10" fill="url(#gp)"/>
+  <text x="430" y="415" font-size="12" text-anchor="middle" fill="#ffffff" font-weight="600" font-family="PingFang SC, Microsoft YaHei, sans-serif">被管数据库：MySQL · PostgreSQL · Oracle · MongoDB · TiDB</text>
+
+  <!-- 连接线 -->
+  <path d="M430 72 L430 90" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <path d="M430 196 L430 212" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <path d="M230 274 L230 290" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <path d="M630 274 L630 290" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <path d="M230 382 L230 396" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <path d="M630 382 L630 396" stroke="#9aa8b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+</svg>

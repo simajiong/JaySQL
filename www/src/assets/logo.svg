@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <!-- 渐变背景 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a4e;stop-opacity:1" />
+    </linearGradient>
+    <!-- 数据库主体渐变 -->
+    <linearGradient id="dbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00758F;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#003545;stop-opacity:1" />
+    </linearGradient>
+    <!-- 高光渐变 -->
+    <linearGradient id="highlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+    </linearGradient>
+    <!-- 神经节点发光 -->
+    <radialGradient id="glow">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+
+  <!-- 背景圆 -->
+  <circle cx="200" cy="180" r="160" fill="url(#bgGrad)" stroke="#00d4ff" stroke-width="2" opacity="0.8"/>
+
+  <!-- 数据库圆柱体（主体） -->
+  <g transform="translate(200, 175)">
+    <!-- 顶部椭圆 -->
+    <ellipse cx="0" cy="-55" rx="70" ry="20" fill="#00a9c9" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- 柱体矩形 -->
+    <rect x="-70" y="-55" width="140" height="90" fill="url(#dbGrad)" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- 底部椭圆（可见部分） -->
+    <ellipse cx="0" cy="35" rx="70" ry="20" fill="#003545" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- 高光条 -->
+    <rect x="-55" y="-50" width="30" height="80" fill="url(#highlight)" rx="5"/>
+  </g>
+
+  <!-- AI 神经节点（叠加在数据库上，表示智能化） -->
+  <g stroke="#00d4ff" stroke-width="2" fill="none">
+    <!-- 连接线 -->
+    <line x1="150" y1="120" x2="200" y2="150"/>
+    <line x1="250" y1="120" x2="200" y2="150"/>
+    <line x1="150" y1="220" x2="200" y2="190"/>
+    <line x1="250" y1="220" x2="200" y2="190"/>
+    <line x1="180" y1="140" x2="220" y2="180"/>
+    <line x1="220" y1="140" x2="180" y2="180"/>
+    <!-- 圆周节点 -->
+    <circle cx="150" cy="120" r="8" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="250" cy="120" r="8" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="150" cy="220" r="8" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="250" cy="220" r="8" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="200" cy="150" r="6" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+    <circle cx="200" cy="190" r="6" fill="#0a0a2e" stroke="#00d4ff" stroke-width="2"/>
+  </g>
+
+  <!-- 中央发光核心 -->
+  <circle cx="200" cy="170" r="25" fill="url(#glow)" opacity="0.6"/>
+  <circle cx="200" cy="170" r="10" fill="#00d4ff" opacity="0.9"/>
+
+  <!-- 文字：JaySQL -->
+  <text x="200" y="290" font-family="'Segoe UI', 'Arial', sans-serif" font-size="48" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="3" filter="url(#shadow)">
+    JaySQL
+  </text>
+  <text x="200" y="315" font-family="'Segoe UI', 'Arial', sans-serif" font-size="14" fill="#00d4ff" text-anchor="middle" letter-spacing="2" opacity="0.7">
+    AGENT-READY · SQL · AI-NATIVE
+  </text>
+
+  <!-- 底部装饰线 -->
+  <line x1="100" y1="335" x2="300" y2="335" stroke="#00d4ff" stroke-width="1" opacity="0.3"/>
+  <line x1="130" y1="340" x2="270" y2="340" stroke="#00d4ff" stroke-width="1" opacity="0.2"/>
+</svg>

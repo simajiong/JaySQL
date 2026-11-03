@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50" width="50" height="50">
+  <defs>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1890ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#096dd9;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- 数据库圆柱体图标 -->
+  <ellipse cx="25" cy="12" rx="15" ry="5" fill="#40a9ff"/>
+  <rect x="10" y="12" width="30" height="22" fill="url(#iconGrad)"/>
+  <ellipse cx="25" cy="34" rx="15" ry="5" fill="#096dd9"/>
+  <!-- 高光 -->
+  <rect x="14" y="15" width="4" height="16" rx="1" fill="#ffffff" opacity="0.3"/>
+</svg>

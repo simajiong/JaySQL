@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 768" role="img" aria-label="Otter with database">
+  <defs>
+    <linearGradient id="bodyGrad" x1="20%" y1="10%" x2="85%" y2="90%">
+      <stop offset="0%" stop-color="#0b4f81" />
+      <stop offset="100%" stop-color="#042e5f" />
+    </linearGradient>
+    <linearGradient id="bellyGrad" x1="15%" y1="20%" x2="90%" y2="95%">
+      <stop offset="0%" stop-color="#5ae4da" />
+      <stop offset="100%" stop-color="#1ea6d5" />
+    </linearGradient>
+    <linearGradient id="dbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f7cb1" />
+      <stop offset="100%" stop-color="#073f7d" />
+    </linearGradient>
+    <linearGradient id="dbBandGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5ce2d8" />
+      <stop offset="100%" stop-color="#2bb4e0" />
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0a2f53" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <g fill="none" fill-rule="evenodd" filter="url(#softShadow)">
+    <path
+      d="M167 350c-52 42-84 99-84 154 0 25 6 43 18 54 14 13 36 20 65 20h89c-35-15-56-43-63-84-9-56-1-106 25-144 10-14 23-28 39-42"
+      fill="url(#bodyGrad)"
+    />
+    <path
+      d="M175 365c-39 32-63 78-63 123 0 29 9 50 29 66 17 13 36 20 58 20h41c-34-19-52-47-58-88-7-49 5-91 35-126"
+      fill="url(#bellyGrad)"
+    />
+
+    <path
+      d="M294 117c-23 0-41 13-50 33-30 7-43 39-43 72v306c0 34 27 61 61 61h246c17 0 31-14 31-31 0-17-14-30-31-30h-9c13-18 21-43 24-73 11-3 22-11 30-20 14-15 21-37 21-64V224c0-33-14-61-46-60-17-22-43-35-80-35z"
+      fill="url(#bodyGrad)"
+    />
+
+    <path
+      d="M335 244c-13 16-20 38-20 60v41c0 70 17 130 52 183h92c25-41 39-99 39-176v-72c0-37-23-61-57-61-9 0-18 2-25 6-7-4-15-6-24-6-24 0-43 8-57 25z"
+      fill="url(#bellyGrad)"
+    />
+
+    <path
+      d="M280 148c-29 0-51 22-51 51v59c0 25 20 45 45 45h136c26 0 46-20 46-45v-58c0-29-22-52-51-52z"
+      fill="url(#bodyGrad)"
+    />
+    <path
+      d="M323 180c-19 0-34 9-42 23v31c0 16 13 29 29 29h65c35 0 57-7 76-28v-32c-8-14-22-23-40-23z"
+      fill="#f7f7f7"
+    />
+
+    <circle cx="354" cy="178" r="15" fill="#0b203a" />
+    <circle cx="443" cy="175" r="15" fill="#0b203a" />
+    <circle cx="349" cy="172" r="5.5" fill="#fff" />
+    <circle cx="438" cy="169" r="5.5" fill="#fff" />
+
+    <ellipse cx="399" cy="197" rx="24" ry="16" fill="#072948" />
+    <path d="M399 211c14 0 24 7 24 17" stroke="#072948" stroke-linecap="round" stroke-width="6" />
+    <path d="M399 211c-14 0-24 7-24 17" stroke="#072948" stroke-linecap="round" stroke-width="6" />
+
+    <path d="M309 222l-28 14" stroke="#0b4f81" stroke-linecap="round" stroke-width="6" />
+    <path d="M317 238l-31 2" stroke="#0b4f81" stroke-linecap="round" stroke-width="6" />
+    <path d="M489 224l28 14" stroke="#0b4f81" stroke-linecap="round" stroke-width="6" />
+    <path d="M482 239l31 2" stroke="#0b4f81" stroke-linecap="round" stroke-width="6" />
+
+    <circle cx="311" cy="165" r="15" fill="#0b4f81" />
+    <circle cx="484" cy="165" r="15" fill="#0b4f81" />
+
+    <path
+      d="M326 343c26 17 46 39 60 69 13 30 18 70 14 116h-92c15-42 21-82 18-119-2-25-10-47-24-66 6-1 15-1 24 0z"
+      fill="url(#bodyGrad)"
+    />
+    <path
+      d="M364 364c17 20 27 45 31 75 4 27 1 57-8 89h-54c16-44 18-89 5-135 9-15 17-25 26-29z"
+      fill="url(#bellyGrad)"
+    />
+
+    <path
+      d="M468 268c43 0 74 21 91 62 9 22 14 51 14 88 0 56-12 101-36 136-19 27-46 40-82 40h-10c27-31 40-76 40-135v-82c0-52-6-88-17-109z"
+      fill="url(#bodyGrad)"
+    />
+    <path
+      d="M451 278c36 11 57 44 61 98 2 28 1 61-4 99-6 50-20 89-42 119h34c30 0 54-16 70-48 17-33 26-73 26-120 0-51-11-90-34-117-20-23-52-35-93-35h-18z"
+      fill="url(#bellyGrad)"
+    />
+
+    <path
+      d="M487 272c-8 41-26 67-55 80-5 2-9 3-13 5 18 18 31 37 37 58 31-16 55-41 72-78 2-4 1-10-2-13l-29-52c-2-4-8-4-10 0z"
+      fill="url(#bodyGrad)"
+    />
+
+    <g transform="translate(430 271)">
+      <ellipse cx="95" cy="32" rx="110" ry="34" fill="#08568b" />
+      <path d="M-15 32h220v43c0 20-49 36-110 36S-15 95-15 75z" fill="url(#dbGrad)" />
+      <ellipse cx="95" cy="75" rx="110" ry="34" fill="#0a5c95" />
+
+      <path d="M-15 115h220v43c0 20-49 36-110 36S-15 178-15 158z" fill="url(#dbBandGrad)" />
+      <ellipse cx="95" cy="158" rx="110" ry="34" fill="#2bc6de" />
+
+      <path d="M-15 198h220v43c0 20-49 36-110 36S-15 261-15 241z" fill="url(#dbBandGrad)" />
+      <ellipse cx="95" cy="241" rx="110" ry="34" fill="#20b8dc" />
+
+      <ellipse cx="95" cy="32" rx="92" ry="24" fill="#f7f7f7" />
+      <path d="M9 91c20 9 58 15 86 15 55 0 96-12 110-31" stroke="#083a6f" stroke-width="12" />
+      <path d="M-1 174c26 13 59 19 96 19 51 0 88-11 107-28" stroke="#083a6f" stroke-width="12" />
+
+      <path d="M22 107c13 7 28 11 43 11" stroke="#46e5ef" stroke-linecap="round" stroke-width="8" />
+      <path d="M149 107l22-8" stroke="#ffc433" stroke-linecap="round" stroke-width="10" />
+      <circle cx="154" cy="164" r="6" fill="#ffc433" />
+      <circle cx="176" cy="160" r="6" fill="#ffc433" />
+      <circle cx="150" cy="219" r="6" fill="#f7f7f7" />
+      <path d="M172 216l14-4" stroke="#f7f7f7" stroke-linecap="round" stroke-width="10" />
+    </g>
+
+    <path
+      d="M210 578h330"
+      stroke="#083a6f"
+      stroke-linecap="round"
+      stroke-width="34"
+    />
+  </g>
+</svg>

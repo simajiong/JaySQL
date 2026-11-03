@@ -1,5 +1,7 @@
 # Logs
-logs
+# 注意必须带前导斜杠：写成 `logs` 会把 src/views/audit/logs/ 这类源码目录
+# 一起忽略掉，导致 clone 下来缺文件、构建报 ENOENT
+/logs
 *.log
 npm-debug.log*
 yarn-debug.log*

@@ -1,0 +1,73 @@
+.gi-app-tooltip {
+  .ant-tooltip-content {
+    width: max-content;
+    max-width: min(320px, calc(100vw - 24px));
+  }
+
+  .ant-tooltip-inner {
+    min-width: 0;
+    padding: 10px 12px;
+    color: var(--gi-color-text-primary);
+    font-size: 12px;
+    line-height: 1.55;
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid rgba(217, 225, 230, 0.95);
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(15, 23, 32, 0.12);
+  }
+
+  .ant-tooltip-arrow::before,
+  .ant-tooltip-arrow-content {
+    background: rgba(255, 255, 255, 0.98) !important;
+  }
+
+  .ant-tooltip-arrow::before {
+    box-shadow: -1px -1px 0 rgba(217, 225, 230, 0.7);
+  }
+
+  .gi-app-tooltip__content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .gi-tooltip-title {
+    color: var(--gi-color-text-primary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .gi-tooltip-label,
+  .gi-tooltip-line {
+    color: var(--gi-color-text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .gi-tooltip-label {
+    font-weight: 600;
+  }
+
+  .gi-tooltip-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--gi-color-text-secondary);
+  }
+
+  .gi-tooltip-list li {
+    position: relative;
+    padding-left: 12px;
+  }
+
+  .gi-tooltip-list li::before {
+    content: '•';
+    position: absolute;
+    left: 0;
+    color: rgba(36, 57, 71, 0.72);
+  }
+}

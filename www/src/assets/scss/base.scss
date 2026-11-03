@@ -1,0 +1,153 @@
+@use '../../components/patterns/pagePatterns';
+
+html,
+body,
+#app {
+  min-height: 100%;
+  overscroll-behavior-x: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--gi-font-family);
+  font-size: var(--gi-font-size-body);
+  color: var(--gi-color-text-primary);
+  background: var(--gi-color-page-bg);
+  text-rendering: optimizelegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--gi-color-info);
+  text-decoration: none;
+}
+
+.gi-page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gi-spacing-ssm);
+}
+
+.gi-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px var(--gi-spacing-sm);
+}
+
+.gi-page-section {
+  background: var(--gi-color-container-bg);
+  border: 1px solid color-mix(in srgb, var(--gi-color-border), #fff 24%);
+  border-radius: var(--gi-radius-card);
+  box-shadow: var(--gi-shadow-sm);
+}
+
+/* ---------------------------------------------------------------------------
+   Icon Chip：卡片里的图标底色容器
+   只负责「一块低饱和浅底圆角方块 + 居中同色系深图标」。
+   不用渐变（低饱和浅色渐变易出脏色带）、不加阴影（卡片已有阴影，chip 再加会变成洞）、
+   不设 padding（chip 本身就是 padding 的视觉替代，加 padding 会让图标偏心）。
+   唯一允许的装饰是 1px 内描边 —— 底色对卡片背景对比只有 1.11~1.21，没有描边看不见边界。
+   用法：容器挂 .gi-chip + .gi-chip--<token>，外层可点击卡片挂 .gi-chip-host 让 hover 传导。
+--------------------------------------------------------------------------- */
+.gi-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--gi-chip-size);
+  height: var(--gi-chip-size);
+  border-radius: var(--gi-chip-radius);
+  font-size: calc(var(--gi-chip-size) * 0.5);
+  line-height: 1;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--chip-fg) var(--gi-chip-ring-alpha), transparent);
+  transition: background-color var(--gi-duration-fast) ease;
+}
+
+.gi-chip--lg {
+  width: var(--gi-chip-size-lg);
+  height: var(--gi-chip-size-lg);
+  border-radius: var(--gi-chip-radius-lg);
+  font-size: calc(var(--gi-chip-size-lg) * 0.5);
+}
+
+.gi-chip--brand {
+  --chip-bg: var(--gi-chip-brand-bg);
+  --chip-fg: var(--gi-chip-brand-fg);
+}
+
+.gi-chip--data {
+  --chip-bg: var(--gi-chip-data-bg);
+  --chip-fg: var(--gi-chip-data-fg);
+}
+
+.gi-chip--risk {
+  --chip-bg: var(--gi-chip-risk-bg);
+  --chip-fg: var(--gi-chip-risk-fg);
+}
+
+.gi-chip--sec {
+  --chip-bg: var(--gi-chip-sec-bg);
+  --chip-fg: var(--gi-chip-sec-fg);
+}
+
+.gi-chip--flow {
+  --chip-bg: var(--gi-chip-flow-bg);
+  --chip-fg: var(--gi-chip-flow-fg);
+}
+
+/* 状态：把图标色按比例混进底色，混的是同一色相，所以只「加深」不「变色」。
+   指针不一定落在 chip 上（整张卡片才是点击区），所以状态挂在 host 上传导。 */
+.gi-chip-host:hover .gi-chip {
+  background: color-mix(
+    in srgb,
+    var(--chip-bg) calc(100% - var(--gi-chip-hover-mix)),
+    var(--chip-fg)
+  );
+}
+
+.gi-chip-host:active .gi-chip {
+  background: color-mix(
+    in srgb,
+    var(--chip-bg) calc(100% - var(--gi-chip-active-mix)),
+    var(--chip-fg)
+  );
+}
+
+.gi-chip.is-selected {
+  background: color-mix(
+    in srgb,
+    var(--chip-bg) calc(100% - var(--gi-chip-selected-mix)),
+    var(--chip-fg)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-fg) 28%, transparent);
+}
+
+.gi-chip:focus-visible {
+  outline: 2px solid var(--gi-color-primary);
+  outline-offset: 2px;
+}
+
+/* 禁用态不再承载语义色：中性底 + 中性图标（3.22:1，满足非文本 3:1 下限） */
+.gi-chip.is-disabled {
+  background: var(--gi-chip-disabled-bg);
+  color: var(--gi-chip-disabled-fg);
+  box-shadow: none;
+  cursor: not-allowed;
+}

@@ -68,7 +68,8 @@ backend/tmp/
 backend/tmp_gen/
 backend/media/
 backend/logs/
-logs/
+# 带前导斜杠：写成 `logs/` 会忽略掉 www/src/views/audit/logs/ 这个源码目录
+/logs/
 
 # ===== 前端 =====
 www/node_modules/
@@ -96,6 +97,8 @@ backend/web/dist.old-*/
 *.bak
 *.orig
 www/README.md
-assets/
+# 必须带前导斜杠：写成 `assets/` 会把 www/src/assets（前端样式与图片）和
+# docs/manual/assets（文档中心配图）一并忽略，clone 后前端构建直接报 ENOENT
+/assets/
 go.work
 go.work.sum

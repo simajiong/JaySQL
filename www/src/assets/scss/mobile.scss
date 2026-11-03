@@ -1,0 +1,143 @@
+/* ---------------------------------------------------------------------------
+   移动端全局基座
+   ---------------------------------------------------------------------------
+   作用范围：仅在视口宽度 <= 768px 生效。所有规则都是「新增」，不修改任何
+   桌面视图下的尺寸、间距与排版，因此 PC 端零回归。
+
+   本文件只处理「antd 组件层的通用兜底」，页面自身的布局问题由各页面在自己的
+   scoped 样式里用 @media (max-width: 768px) 处理，避免全局规则误伤页面设计。
+
+   覆盖内容：
+     1. Drawer 铺满        —— antd Drawer 没有 max-width 保护，固定像素宽会溢出屏幕
+     2. Modal 收口         —— 解除 min-width 对 max-width 的击穿（CSS 规范 min 优先于 max）
+     3. 表格横向滚动兜底   —— 未设 scroll.x 的表格也能滑动，不再撑破页面
+     4. 长文本 / 媒体自适应
+     5. 触控区下限
+     6. 横向表单标签与控件各占整行（label-col span 偏小时标签会被压扁）
+     7. 表单栅格多列 → 单列
+     8. a-space 折行（默认 inline-flex 不换行，窄屏必然溢出）
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  /* 1. Drawer 铺满：antd 的 Drawer 不像 Modal 自带 max-width，
+        :width="620" 这类固定值在 375px 屏上会把内容推出视口 */
+  .ant-drawer-content-wrapper {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+  }
+
+  .ant-drawer-body {
+    padding: 12px !important;
+    overflow-x: hidden;
+  }
+
+  /* 2. Modal 收口：
+        - min-width 会击穿 antd 自带的 max-width: calc(100vw - 32px)
+        - 百分比宽度（65% / 72% / 60%）在 375px 屏上只有 220~270px，内容不可读
+     这里统一按视口铺满，只留 24px 呼吸位 */
+  .ant-modal {
+    width: calc(100vw - 24px) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto !important;
+    top: 0 !important;
+  }
+
+  .ant-modal-body {
+    padding: 12px !important;
+    overflow-x: hidden;
+  }
+
+  /* 弹窗底部按钮纵向铺满：移动端标准交互，避免多个按钮挤在一行 */
+  .ant-modal-footer {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .ant-modal-footer .ant-btn {
+    width: 100%;
+    margin-inline: 0 !important;
+  }
+
+  /* 3. 表格横向滚动兜底：已设 scroll.x 的表格不受影响（本身就有滚动容器），
+        未设的表格至少可以滑动查看，而不是把页面撑出横向滚动条 */
+  .ant-table-wrapper,
+  .ant-table-content {
+    overflow-x: auto;
+  }
+
+  /* 4. 长文本 / 媒体自适应 */
+  img,
+  svg,
+  video,
+  canvas {
+    max-width: 100%;
+  }
+
+  pre,
+  code,
+  .hljs {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* 描述列表在窄屏单列，避免标签列被压扁 */
+  .ant-descriptions-row {
+    display: block;
+  }
+
+  .ant-descriptions-item,
+  .ant-descriptions-item-label,
+  .ant-descriptions-item-content {
+    display: block;
+    width: 100%;
+  }
+
+  .ant-descriptions-item-label {
+    border-right: none !important;
+    padding-bottom: 2px;
+  }
+
+  /* 5. 触控区下限：antd 的小按钮默认 24px，移动端偏低 */
+  .ant-btn-sm {
+    min-height: 32px;
+  }
+
+  /* 6. 横向表单：标签与控件各占整行（label-col span 4 在窄屏只有 ~57px） */
+  .ant-form-horizontal .ant-form-item-label,
+  .ant-form-horizontal .ant-form-item-control {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+
+  .ant-form-horizontal .ant-form-item-label {
+    text-align: left;
+    padding: 0 0 4px;
+  }
+
+  /* 7. 表单栅格多列 → 单列（只处理明确的两列/多列表单布局，不动 span 4/6/8 这类小控件） */
+  .ant-col-12,
+  .ant-col-14,
+  .ant-col-16 {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* 8. a-space 折行：默认 inline-flex + nowrap，窄屏必然把工具栏撑出屏幕 */
+  .ant-space {
+    flex-wrap: wrap !important;
+    row-gap: 8px;
+  }
+
+  .ant-space-item {
+    max-width: 100%;
+  }
+
+  /* 补：分页器在窄屏换行，避免与总数字挤在一起 */
+  .ant-pagination {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+}

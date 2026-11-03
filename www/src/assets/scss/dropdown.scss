@@ -1,0 +1,39 @@
+// 实例选择下拉（instance-select-dropdown / --two-line）的选中态配色。
+//
+// 背景：antd 由主色 #0f766e 派生的 optionSelectedBg 是中调灰青（实测 #a8b5b2），
+// 环境徽标的彩色文字（开发=绿 #52c41a / 生产=红）压在上面几乎不可读。
+// 下拉经 antd 传送到 body 挂载，组件内的 scoped :deep 规则到不了这里，
+// 因此这段必须是全局样式（经 index.scss 引入）。
+//
+// 方案：选中背景改为「品牌色 8% 混白」的极浅青（与页面主题同色系），
+// 文字与环境徽标恢复白底级对比度；徽标在选中项上改用纯白底小胶囊，
+// 保证任何环境色（绿/红/橙/紫…）在选中行都和白底未选中行一样清晰。
+
+.ant-select-dropdown.instance-select-dropdown,
+.ant-select-dropdown.instance-select-dropdown--two-line {
+  .ant-select-item-option {
+    border-radius: 6px;
+  }
+
+  // 选中态：极浅品牌青，替代 antd 派生的中调灰青
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+    background-color: color-mix(in srgb, var(--gi-color-primary, #0f766e) 8%, #ffffff);
+  }
+
+  // 悬停与「选中 + 悬停」：浅一档的同一色系，避免与选中态混淆
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+    background-color: color-mix(in srgb, var(--gi-color-primary, #0f766e) 4%, #ffffff);
+  }
+
+  .ant-select-item-option-active.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+    background-color: color-mix(in srgb, var(--gi-color-primary, #0f766e) 11%, #ffffff);
+  }
+
+  // 选中行的环境徽标：纯白底胶囊，环境彩字在白底上保持可读。
+  // 徽标的背景/边框由 buildEnvironmentTagStyle 以内联样式写入，
+  // 内联优先级高于样式表，这里必须 !important 才能覆盖。
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .instance-select-option__env {
+    background: #ffffff !important;
+    border-color: color-mix(in srgb, currentColor 55%, transparent) !important;
+  }
+}

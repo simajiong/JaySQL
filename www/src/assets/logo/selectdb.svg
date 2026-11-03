@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="256" viewBox="0 0 1024 256" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <title>SelectDB</title>
+  <circle cx="128" cy="128" r="88" stroke="#0F62FE" stroke-width="10"/>
+  <path
+    d="M173 63c-17-14-37-22-58-22c-33 0-58 17-58 43c0 19 12 31 40 40l24 8c19 6 27 12 27 22c0 15-15 25-36 25c-18 0-35-8-52-24l-18 21c20 20 45 31 72 31c42 0 70-22 70-54c0-22-14-37-43-46l-24-8c-17-5-24-10-24-19c0-13 13-22 33-22c15 0 30 6 44 17l3 2z"
+    fill="#0F62FE"
+  />
+  <text
+    x="286"
+    y="168"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="120"
+    font-weight="700"
+    fill="#111111"
+  >SelectDB</text>
+</svg>

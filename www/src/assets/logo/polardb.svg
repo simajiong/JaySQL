@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="256" viewBox="0 0 1024 256" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <title>PolarDB</title>
+  <path d="M120 48l18 37 41 6-30 29 7 41-36-19-36 19 7-41-30-29 41-6 18-37z" fill="#FF6A00"/>
+  <text
+    x="210"
+    y="165"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="118"
+    font-weight="700"
+    fill="#FF6A00"
+  >PolarDB</text>
+</svg>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="256" viewBox="0 0 1024 256" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <title>Oracle</title>
+  <g transform="translate(86 174) skewX(-14)">
+    <text
+      x="0"
+      y="0"
+      font-family="Arial Black, Arial, Helvetica, sans-serif"
+      font-size="150"
+      font-weight="900"
+      letter-spacing="6"
+      fill="#C74634"
+    >ORACLE</text>
+  </g>
+</svg>

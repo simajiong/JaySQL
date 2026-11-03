@@ -1,0 +1,107 @@
+:root {
+  /* Color */
+  --gi-color-primary: #0f766e;
+  --gi-color-primary-hover: #0d6b63;
+  --gi-color-primary-active: #0b5f58;
+  --gi-color-info: #1677ff;
+  --gi-color-success: #52c41a;
+  --gi-color-warning: #faad14;
+  --gi-color-error: #ff4d4f;
+  --gi-color-page-bg: #f4f7f8;
+  --gi-color-container-bg: #ffffff;
+  --gi-color-border: #d9e1e6;
+  --gi-color-text-primary: rgba(15, 23, 32, 0.9);
+  --gi-color-text-secondary: rgba(36, 57, 71, 0.72);
+  --gi-color-text-tertiary: rgba(79, 100, 112, 0.8);
+
+  /* Spacing */
+  --gi-spacing-xs: 4px;
+  --gi-spacing-sm: 8px;
+  --gi-spacing-ssm: 12px;
+  --gi-spacing-md: 16px;
+  --gi-spacing-lg: 24px;
+  --gi-spacing-xl: 32px;
+
+  /* Radius */
+  --gi-radius-sm: 6px;
+  --gi-radius-md: 8px;
+  --gi-radius-lg: 10px;
+  --gi-radius-card: 12px;
+
+  /* Shadow */
+  --gi-shadow-sm: 0 1px 2px rgba(15, 23, 32, 0.06);
+  --gi-shadow-md: 0 8px 20px rgba(15, 23, 32, 0.08);
+  --gi-shadow-lg: 0 14px 28px rgba(15, 23, 32, 0.1);
+
+  /* Typography */
+  --gi-font-family:
+    'PingFang SC', 'Noto Sans SC', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  --gi-font-size-caption: 12px;
+  --gi-font-size-body: 14px;
+  --gi-font-size-body-lg: 16px;
+  --gi-font-size-title: 20px;
+  --gi-font-size-hero: 24px;
+
+  /* Motion */
+  --gi-duration-fast: 120ms;
+  --gi-duration-base: 200ms;
+  --gi-duration-slow: 280ms;
+
+  /* Layout */
+  --gi-layout-header-height: 52px;
+  --gi-layout-sider-width: 195px;
+  --gi-layout-sider-width-collapsed: 72px;
+
+  /* Icon Chip：卡片图标底色（首页「我的资源 / 快捷入口」等）
+     口径：低饱和浅底（L=93.5%）+ 同色系深图标（L=26%），图标/底色对比 5.86~11.30:1。
+     主色 --gi-color-primary 只作色相锚点（H≈175），brand 令牌取 H=170 同源。
+     首屏只用 brand/data/risk/sec 四个令牌；flow 是中性兜底，无法归类的新入口才用，
+     不要为了区分再加第五、第六个色相。 */
+  --gi-chip-brand-bg: #e7f6f4;
+  --gi-chip-brand-fg: #1c695c; /* 主色同源：核心能力 / 主操作 */
+  --gi-chip-data-bg: #e6e9f7;
+  --gi-chip-data-fg: #18266d; /* 数据类：实例 / 查询 / 监控 */
+  --gi-chip-risk-bg: #f8eee5;
+  --gi-chip-risk-fg: #6e3f17; /* 风险类：告警 / 异常 / 待处理 */
+  --gi-chip-sec-bg: #efe7f5;
+  --gi-chip-sec-fg: #451e66; /* 安全合规：权限 / 审计 / 访问管控 */
+  --gi-chip-flow-bg: #eceef0;
+  --gi-chip-flow-fg: #324152; /* 中性兜底：新增卡片 / 未知类别 */
+
+  /* Icon Chip 形状：两级尺寸足够，不要再分第三级 */
+  --gi-chip-size: 32px; /* 我的资源 */
+  --gi-chip-size-lg: 36px; /* 快捷入口 */
+  --gi-chip-radius: 10px; /* ≈ 尺寸 × 0.32 */
+  --gi-chip-radius-lg: 12px;
+
+  /* Icon Chip 状态：不另配色，把图标色按比例混进底色（同色相，只加深不变色） */
+  --gi-chip-hover-mix: 12%;
+  --gi-chip-selected-mix: 16%;
+  --gi-chip-active-mix: 22%;
+  --gi-chip-ring-alpha: 8%; /* 内描边：底色对卡片背景仅 1.11~1.21，无描边看不见边界 */
+  --gi-chip-disabled-bg: #eceef0;
+  --gi-chip-disabled-fg: #78868f;
+}
+
+/* 深色模式：当前项目尚未接入深色主题入口，此处为预留 ——
+   一旦 html 上挂 data-theme="dark"（或后续接入切换），这段即刻生效，无需改组件。
+   深色下底色对暗容器只有 1.14~1.68 对比，务必保留 --gi-chip-ring-alpha 的内描边。 */
+html[data-theme='dark'] {
+  --gi-chip-brand-bg: #284d47;
+  --gi-chip-brand-fg: #c7f0e9;
+  --gi-chip-data-bg: #282e4d;
+  --gi-chip-data-fg: #c7cdf0;
+  --gi-chip-risk-bg: #4d3928;
+  --gi-chip-risk-fg: #f0dac7;
+  --gi-chip-sec-bg: #3c284d;
+  --gi-chip-sec-fg: #ddc7f0;
+  --gi-chip-flow-bg: #323a43;
+  --gi-chip-flow-fg: #ccdaeb;
+
+  --gi-chip-hover-mix: 14%;
+  --gi-chip-selected-mix: 18%;
+  --gi-chip-active-mix: 24%;
+  --gi-chip-ring-alpha: 14%;
+  --gi-chip-disabled-bg: #2b3138;
+  --gi-chip-disabled-fg: #6b757e;
+}
