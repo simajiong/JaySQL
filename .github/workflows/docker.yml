@@ -27,6 +27,7 @@ jobs:
   build:
     name: Build and push
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read # checkout 源码
       packages: write # 推送 GHCR 镜像
@@ -34,10 +35,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # arm64 镜像在 amd64 runner 上靠 QEMU 模拟构建
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,21 +57,28 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      # 直接调 buildx 而不是用 build-push-action，为的是失败时能把日志尾部
+      # 通过 ::error:: 注解暴露出来 —— action 内部日志匿名访问拿不到。
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          # 同时产出 amd64 与 arm64，Docker 会按宿主机架构自动挑选
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # gha 缓存：不改依赖时后续构建快很多
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          TAGS=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && TAGS+=(--tag "$t")
+          done <<< "${{ steps.meta.outputs.tags }}"
+          echo "将推送标签：${TAGS[*]}"
+
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg VERSION="${GITHUB_REF_NAME}" \
+            --file docker/Dockerfile \
+            --progress=plain \
+            "${TAGS[@]}" \
+            --push \
+            . 2>&1 | tee /tmp/build.log || {
+              echo "::error title=Docker build failed::$(tail -30 /tmp/build.log | tr '\n' '~' | cut -c1-2900)"
+              exit 1
+            }
 
       - name: Summary
         run: |
