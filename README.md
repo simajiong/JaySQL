@@ -41,35 +41,19 @@ SQL 查询受数据授权约束，变更走工单 + 规范预审 + 审批流，�
 
 能力随引擎逐步落地，下表为**当前已实现**的口径：
 
-| 引擎 | SQL 查询 | SQL 审核 | 变更工单 | 备份恢复 | 监控采集 | 慢SQL |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| 引擎 | SQL 查询 | SQL 审核 | 备份恢复 | 监控采集 | 慢SQL | 性能分析 |
+| :--- | :---: | :---: | :---: | :---: | :---: | ----- |
 | **MySQL** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **PostgreSQL** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Oracle** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **SQL Server** | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **TiDB** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Oracle** | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| **SQL Server** | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **TiDB** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **ClickHouse** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Doris** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **OceanBase** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 SQL 审核内置 **279 条标准规则**：MySQL 82、TiDB 82、PostgreSQL 58、Oracle 57，
 支持全局与实例级参数配置、规则开关与级别调整（级别唯一数据源是 `insight_sql_standard_rules.level`）。
-
----
-
-## 架构
-
-![JaySQL 分层架构](docs/manual/assets/architecture.svg)
-
-| 层 | 组成 | 说明 |
-| :-- | :--- | :--- |
-| 接入层 | Vue 3 + Ant Design Vue 控制台、REST API、WebSocket 日志推送 | 唯一用户入口 |
-| 应用层 | Go + Gin + GORM，含工作台 / 工单 / 备份 / 监控 / 性能 / 审计与定时 cron | 业务编排与调度 |
-| 数据层 | 元数据库（MySQL）、指标库（Prometheus）、存储目标 | 平台自身数据都在这里 |
-| 执行层 | backup-agent + mysqldump / pg_dump / xtrabackup | 跑在被管主机上 |
-| 采集层 | node_exporter + 数据库采集 SQL + 慢日志采集器 | 指标与慢日志来源 |
-
----
 
 ## 部署依赖
 
@@ -143,7 +127,52 @@ database:
 
 ## 快速开始
 
-### 方式一：下载二进制
+### 方式一：Docker（推荐）
+
+镜像已发布在 GitHub Container Registry，同时提供 `linux/amd64` 与 `linux/arm64`，**不用装 Go / Node，也不用在服务器上编译**。Windows 装 Docker Desktop 即可，跑的是同一个镜像。
+
+**A. 只跑 JaySQL，元数据库用你已有的 MySQL**
+
+```bash
+git clone https://github.com/simajiong/JaySQL.git
+cd JaySQL/docker
+cp config.yaml.example config.yaml
+```
+
+编辑 `config.yaml`，把这两处改掉：
+
+```yaml
+app:
+    secret_key: "<32 位随机串，用 openssl rand -hex 16 生成>"
+database:
+    host: "<元库地址；宿主机上的 MySQL 写 host.docker.internal>"
+    password: "<元库密码>"
+```
+
+```bash
+docker compose up -d
+docker compose logs -f jaysql     # 首次启动会建约 50 张表，等它跑完
+```
+
+**B. 连元数据库一起跑，一条命令试用**
+
+```bash
+cd JaySQL/docker
+cp config.yaml.example config.yaml      # 默认 database.host 已是 mysql，不用改
+cat > .env <<'EOF'
+MYSQL_ROOT_PASSWORD=ChangeMeRootPwd1
+MYSQL_PASSWORD=ChangeMeAppPwd1
+EOF
+docker compose --profile with-db up -d
+```
+
+浏览器打开 `http://<服务器IP>:8083`，初始管理员 `admin` / `Admin@2026`。
+
+> * 改代码后想自构建镜像：`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`
+> * Windows / 离线内网 / 挂载与排错的完整说明见 [docs/DOCKER.md](docs/DOCKER.md)
+> * 容器部署下**备份节点请配成远程 SSH 机器**，本机 localhost 模式在容器内缺少 `mysqldump` / `xtrabackup` 且需切换数据库 OS 用户
+
+### 方式二：下载二进制
 
 前往 [Releases](https://github.com/simajiong/JaySQL/releases) 获取对应平台的包，解压后：
 
@@ -154,7 +183,7 @@ cp config.yaml.template config.yaml   # 修改 secret_key 与数据库连接
 
 > 二进制名沿用 `goinsight`（沿用上游历史命名，与 JaySQL 同物）；systemd 部署时服务名与安装目录同理。
 
-### 方式二：从源码构建
+### 方式三：从源码构建
 
 ```bash
 # 1. 构建前端（会先执行 docs:build 生成文档中心产物）
@@ -195,8 +224,6 @@ cp config.yaml.template config.yaml
 * `config.yaml` 里的 `secret_key` 必须替换为自己的 32 位随机字符串（它与 JWT 签名同源，泄露即等于可伪造登录凭证）
 * 生产环境前置 Nginx 并配置 HTTPS
 
----
-
 ## 在线体验
 
 [体验地址](https://www.jaysql.top/)
@@ -223,7 +250,14 @@ jaysql/
 │   └── scripts/             # build-docs.mjs：把 docs/manual 转成文档中心产物
 ├── docs/
 │   ├── manual/              # 文档中心内容源（随代码走，构建期转 HTML）
+│   ├── DOCKER.md            # Docker 部署实施手册（Windows / 离线内网 / 排错）
 │   └── plans/               # 内部设计与方案文档（不进产品界面）
+├── docker/                  # 容器化部署：Dockerfile + compose + 配置模板
+│   ├── Dockerfile           # 三阶段构建（前端 → 后端 → 运行时）
+│   ├── docker-compose.yml   # 拉 ghcr.io 官方镜像启动
+│   ├── docker-compose.build.yml  # 本地构建覆盖层
+│   └── config.yaml.example  # 容器版配置模板（7 处容器差异已标注）
+├── .github/workflows/       # CI：推 main / v* 标签自动构建双架构镜像
 ├── scripts/                 # 构建与部署脚本
 ├── THIRD_PARTY_LICENSES/    # 上游许可存档
 └── LICENSE

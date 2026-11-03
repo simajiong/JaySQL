@@ -1,0 +1,59 @@
+# 放在仓库根目录（与 .gitignore 同级）。
+# 构建上下文默认是仓库根，不写这个文件会把 .git、node_modules、历史构建产物
+# 一起发给 daemon，上下文从几 MB 涨到几 GB。
+
+# ---- 版本控制 ----
+.git
+.gitignore
+.gitattributes
+
+# ---- 前端依赖与产物（镜像里重新构建）----
+**/node_modules
+www/dist
+www/dist-*
+www/dist_build*
+www/.vite
+www/.npm-cache
+# 文档中心正文产物由 npm run prebuild 生成，不需要拷进上下文
+www/src/views/docs/manifest.json
+
+# ---- 后端编译产物 ----
+backend/goinsight
+backend/goinsight-linux
+backend/goinsight-linux-amd64
+backend/backup-agent-linux
+backend/backfill_order_logs-linux
+backend/agentcmd
+backend/main
+backend/bin
+backend/tmp
+backend/tmp_gen
+backend/*.db
+
+# 注意：下面这条是安全的 —— 前端产物会由 COPY --from=web 重建
+backend/web/dist
+
+# ---- 本地配置（含真实密钥，绝不进镜像）----
+backend/config.yaml
+backend/config-linux.yaml
+config.yaml
+config-linux.yaml
+docker/config.yaml
+
+# ---- 运行期数据 ----
+backend/media
+backend/logs
+logs
+media
+
+# ---- 编辑器与临时文件 ----
+**/.DS_Store
+**/.idea
+**/.vscode
+**/.trae
+**/.codex
+**/*.swp
+**/*.bak
+**/*.orig
+**/*.zip
+**/*.tar.gz

@@ -1,0 +1,89 @@
+name: Docker Image
+
+# 什么时候构建：
+#   1. 推 main（且改动涉及镜像内容）-> 产出 ghcr.io/<owner>/jaysql:latest
+#   2. 推 v* 标签                       -> 产出 :1.99 / :1.99.0 / :latest
+#   3. 手动 Run workflow                -> 同上，用当前分支
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "www/**"
+      - "docs/**"
+      - "docker/**"
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  # 镜像名必须全小写（GHCR 规定）；仓库名 JaySQL 有大写，所以这里写死 jaysql
+  IMAGE: ghcr.io/${{ github.repository_owner }}/jaysql
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout 源码
+      packages: write # 推送 GHCR 镜像
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # arm64 镜像在 amd64 runner 上靠 QEMU 模拟构建
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 打标签规则：tag 推送产出语义化版本，main 推送产出 latest
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          # 同时产出 amd64 与 arm64，Docker 会按宿主机架构自动挑选
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # gha 缓存：不改依赖时后续构建快很多
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### 镜像已推送"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "拉取：\`docker pull ${IMAGE}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

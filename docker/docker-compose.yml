@@ -1,0 +1,103 @@
+# ============================================================================
+# JaySQL —— Docker Compose 部署
+#
+# 默认从 GitHub Container Registry 拉取官方镜像，不需要本地构建。
+#
+#   1) 只跑 JaySQL，元数据库用你已有的 MySQL（生产推荐）
+#        cp config.yaml.example config.yaml   # 改 database 段
+#        docker compose up -d
+#
+#   2) 连元数据库一起跑，一条命令试用
+#        cp config.yaml.example config.yaml
+#        cat > .env <<'EOF'
+#        MYSQL_ROOT_PASSWORD=ChangeMeRootPwd1
+#        MYSQL_PASSWORD=ChangeMeAppPwd1
+#        EOF
+#        docker compose --profile with-db up -d
+#
+# 想用本地源码构建镜像（改代码后自测）见 docker-compose.build.yml。
+# 完整说明：docs/DOCKER.md
+# ============================================================================
+name: jaysql
+
+services:
+  jaysql:
+    # 官方镜像。镜像同时提供 linux/amd64 与 linux/arm64，Docker 会按宿主机自动选。
+    image: ghcr.io/simajiong/jaysql:latest
+    container_name: jaysql
+    restart: unless-stopped
+
+    ports:
+      # 左边是宿主机端口，被占用时改这里，容器内始终是 8083
+      - "8083:8083"
+
+    environment:
+      # 镜像内已装 tzdata，这里设了才生效；不设则日志走 UTC
+      TZ: Asia/Shanghai
+
+    volumes:
+      # 配置文件只读挂载；改完要 docker compose restart jaysql
+      - ./config.yaml:/app/config.yaml:ro
+      # 命名卷：Logo 上传、日志、内置 gh-ost 的释放目录
+      - jaysql_media:/app/media
+      - jaysql_logs:/app/logs
+      - jaysql_cache:/app/.cache
+
+    # 让容器能用 host.docker.internal 访问宿主机上的 MySQL
+    # （Windows / macOS 的 Docker Desktop 自带，Linux 靠这一行）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      # 应用没有 /health 端点，用内嵌静态资源探活
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8083/favicon.ico"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 首次启动要 AutoMigrate 约 50 张表并写种子数据，给足 2 分钟
+      start_period: 120s
+
+    logging:
+      driver: json-file
+      options:
+        # 不加限制时容器日志会无限增长，撑爆 /var/lib/docker
+        max-size: "50m"
+        max-file: "5"
+
+  # --------------------------------------------------------------------------
+  # 可选：元数据库。只在 --profile with-db 时启动。
+  # 已有 MySQL 的环境不要开这个，直接把 config.yaml 的 database.host 指向现有实例。
+  # --------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    profiles: ["with-db"]
+    container_name: jaysql-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      # 容器默认 UTC，不设这个的话工单/告警时间会比本地差 8 小时
+      - --default-time-zone=+08:00
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?请先设置 MYSQL_ROOT_PASSWORD（可写在同目录 .env 里）}"
+      MYSQL_DATABASE: jaysql
+      MYSQL_USER: jaysql
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?请先设置 MYSQL_PASSWORD（可写在同目录 .env 里）}"
+      TZ: Asia/Shanghai
+    ports:
+      # 故意映射到 3307，避免和宿主机已装的 MySQL 抢 3306
+      - "3307:3306"
+    volumes:
+      - jaysql_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  jaysql_media:
+  jaysql_logs:
+  jaysql_cache:
+  jaysql_mysql:

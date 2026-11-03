@@ -1,0 +1,101 @@
+# ============================================================================
+# JaySQL 容器部署配置（复制为 docker/config.yaml 后修改）
+#
+# 与 backend/config.yaml.template 的差异，只有为容器环境必须调整的几项，
+# 每处都标了「容器差异」；其余保持原样即可。
+# ============================================================================
+
+app:
+    # 【容器差异】必须是 0.0.0.0。写 127.0.0.1 时端口映射进不来，
+    # 宿主机 curl 会直接 connection refused，且日志里看不出任何异常。
+    listen_address: "0.0.0.0:8083"
+    environment: "prod"
+    # 必须 32 个字符。生成方式：openssl rand -hex 16
+    # 这个值同时用于 JWT 签名与凭据加密，换掉等于所有人重新登录、
+    # 且库里已加密的密码全部解不开 —— 上线后不要再改。
+    secret_key: "0123456789abcdef0123456789abcdef"
+
+crontab:
+    sync_db_metas: "*/5 * * * *"
+
+log:
+    level: "info"
+    # 【容器差异】写容器内路径，对应 compose 里的 jaysql_logs 卷。
+    # 目录不存在时程序会自动创建，但卷没挂的话重启即丢。
+    root_dir: "/app/logs"
+
+database:
+    driver: "mysql"
+    # 【容器差异】三种写法：
+    #   一体化 compose        -> mysql
+    #   宿主机上的 MySQL       -> host.docker.internal   （需 extra_hosts，已配）
+    #   网络里的其他 MySQL     -> 直接写 IP 或域名
+    host: "mysql"
+    port: 3306
+    database: "jaysql"
+    username: "jaysql"
+    password: "CHANGE_ME"
+    charset: "utf8mb4"
+    # 单个容器 32/64 足够；调大只会占元库连接数
+    max_idle_conns: 32
+    max_open_conns: 64
+    conn_max_life_time: 3600
+    conn_max_idle_time: 3600
+
+das:
+    max_execution_time: 600000
+    default_return_rows: 200
+    max_return_rows: 1000
+
+monitor:
+    # 【容器差异】容器内的 127.0.0.1 是它自己，Prometheus 在宿主机或别处时必须改。
+    # 没接 Prometheus 就把这项留空，别留着默认值 —— 否则每次采集都会超时重试。
+    prometheus_url: ""
+    prometheus_timeout_seconds: 5
+
+ghost:
+    # 【容器差异】留空。留空 = 直接使用随二进制分发的内置 gh-ost
+    # （linux-amd64 / linux-arm64 各一份），运行时会释放到 $HOME/.cache 下。
+    # 如果照抄成 /usr/local/bin/gh-ost，容器里没有该文件，程序会先打印一行
+    # 回退日志再用内置版本，能用但多一次无谓的 stat。
+    path: ""
+    args:
+        [
+            "--allow-on-master",
+            "--assume-rbr",
+            "--initially-drop-ghost-table",
+            "--initially-drop-old-table",
+            "-initially-drop-socket-file",
+            "-exact-rowcount",
+            "--approve-renamed-columns",
+            "--concurrent-rowcount=false",
+            "--chunk-size=800",
+        ]
+
+notify:
+    # 【容器差异】告警通知里「点此查看」的跳转地址，必须是使用者浏览器
+    # 能访问到的地址。写 127.0.0.1:8083 的话，收到钉钉告警的人点开会打不开。
+    notice_url: "http://192.168.1.100:8083"
+    wechat:
+        enable: false
+        webhook: ""
+    mail:
+        enable: false
+        username: ""
+        password: ""
+        host: ""
+        port: 587
+    dingtalk:
+        enable: false
+        webhook: ""
+        keywords: ""
+
+ai:
+    enabled: true
+    allow_insecure_http: false
+    failover_enabled: true
+    degrade_to_rule_engine: true
+    health_check_interval: "*/5 * * * *"
+    request_timeout_seconds: 60
+    # 注意：各厂商的 API Key 不要写在这里，统一在页面「AI 助手 → 模型配置」
+    # 录入，落库时按 AES-256-GCM 加密，配置文件里只放平台级开关。

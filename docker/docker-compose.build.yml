@@ -1,0 +1,19 @@
+# ============================================================================
+# 本地构建镜像（改完代码自测用），与 docker-compose.yml 叠加使用：
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# 它会覆盖 docker-compose.yml 里的 image，构建出的镜像打上 jaysql:local。
+# 构建上下文是仓库根 —— Dockerfile 里要 COPY backend/、www/、docs/。
+# ============================================================================
+services:
+  jaysql:
+    image: jaysql:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VERSION: local
+        # 国内网络可解开下面两行
+        # NPM_REGISTRY: https://registry.npmmirror.com
+        # GOPROXY: https://goproxy.cn,direct

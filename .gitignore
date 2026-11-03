@@ -27,6 +27,9 @@ backend/config-linux.yaml
 config.yaml
 config-linux.yaml
 *.local.yaml
+# Docker 部署：docker compose 用的 .env（含 MySQL 密码）与挂载的配置
+docker/.env
+docker/config.yaml
 
 # ===== 编译产物：二进制 =====
 # （gh-ost 是 go:embed 依赖，见文件头铁律 1，不在忽略范围内）
