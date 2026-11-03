@@ -141,7 +141,7 @@ func instanceBrief(instance *commonModels.InsightInstances, envs map[int]string)
 func resolveInstanceTool() *Tool {
 	return &Tool{
 		Name: "resolve_instance",
-		Description: "根据主机地址与端口（如 172.19.44.101:3306）在平台已登记的实例中查找实例，" +
+		Description: "根据主机地址与端口（如 192.0.2.10:3306）在平台已登记的实例中查找实例，" +
 			"返回实例 ID、数据库类型、所属环境。涉及具体实例的问题应先调用本工具，把地址解析成平台实例。",
 		Permission: "order.view",
 		Parameters: map[string]any{

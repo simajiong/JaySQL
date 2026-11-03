@@ -65,7 +65,7 @@ func TestTransparentEncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("Install failed: %v", err)
 	}
 
-	row := secretTestTarget{Name: "n2", SSHPassword: "Root@2026"}
+	row := secretTestTarget{Name: "n2", SSHPassword: "TestPwd@NotReal"}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestTransparentEncryptDecryptRoundTrip(t *testing.T) {
 	if err := db.Where("id = ?", row.ID).First(&loaded).Error; err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
-	if loaded.SSHPassword != "Root@2026" {
+	if loaded.SSHPassword != "TestPwd@NotReal" {
 		t.Fatalf("decrypt on read failed, got %q", loaded.SSHPassword)
 	}
 	if loaded.Name != "n2" {

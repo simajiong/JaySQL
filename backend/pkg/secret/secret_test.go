@@ -17,7 +17,7 @@ func setupKey(t *testing.T) {
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	setupKey(t)
-	const plain = "Root@2026!中文密码"
+	const plain = "TestPwd@NotReal!中文密码"
 	cipher, err := Encrypt(plain)
 	if err != nil {
 		t.Fatalf("Encrypt failed: %v", err)
