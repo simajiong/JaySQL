@@ -45,7 +45,10 @@ RUN cd www && npm run build
 # ---------------------------------------------------------------------------
 # 阶段 2：后端
 # ---------------------------------------------------------------------------
-FROM ${GO_IMAGE} AS server
+# --platform=$BUILDPLATFORM：用构建机原生架构的 Go 工具链，靠 GOARCH 交叉编译
+# 出目标平台二进制。不这么做的话，arm64 镜像要在 amd64 runner 上走 QEMU 模拟
+# 执行 go build，慢 5~10 倍且容易把内存吃满被 OOM kill。
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS server
 WORKDIR /src
 
 # Go 1.23.12 项目；CGO_ENABLED=0 已验证可编译（产物为静态链接 ELF）。

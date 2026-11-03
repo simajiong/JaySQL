@@ -36,6 +36,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 只有 runtime 阶段的 apk add / adduser 需要在目标架构下执行；
+      # 前端和 Go 编译都在 BUILDPLATFORM 上原生完成，不走模拟。
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -69,7 +74,7 @@ jobs:
           echo "将推送标签：${TAGS[*]}"
 
           docker buildx build \
-            --platform linux/amd64 \
+            --platform linux/amd64,linux/arm64 \
             --build-arg VERSION="${GITHUB_REF_NAME}" \
             --file docker/Dockerfile \
             --progress=plain \
