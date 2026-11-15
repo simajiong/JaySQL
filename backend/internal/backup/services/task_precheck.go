@@ -343,8 +343,8 @@ func runBackupTaskPrecheck(form *backupForms.PrecheckBackupTaskForm, c *gin.Cont
 }
 
 func buildLogicalBackupTaskPrecheckContext(form *backupForms.PrecheckBackupTaskForm, c *gin.Context, instance *commonModels.InsightInstances, backupType string, driverConfigJSON datatypes.JSON) (*backupTaskPrecheckContext, error) {
-	if string(instance.DbType) != "MySQL" && string(instance.DbType) != "PostgreSQL" {
-		return nil, fmt.Errorf("当前仅支持 MySQL/PostgreSQL 逻辑备份启动前预校验")
+	if !strings.EqualFold(strings.TrimSpace(string(instance.DbType)), "MySQL") && !isPostgresLogicalFamily(string(instance.DbType)) {
+		return nil, fmt.Errorf("当前仅支持 MySQL/PostgreSQL/Kingbase 逻辑备份启动前预校验")
 	}
 	logicalCfg, err := loadLogicalBackupDriverConfig(driverConfigJSON)
 	if err != nil {
@@ -401,8 +401,8 @@ func buildLogicalBackupTaskPrecheckContext(form *backupForms.PrecheckBackupTaskF
 	extra := parseExtraConfig(instance.ExtraConfig)
 	sourceDatabase := strings.TrimSpace(extra["database"])
 	sslMode := strings.TrimSpace(extra["sslmode"])
-	if string(instance.DbType) == "PostgreSQL" {
-		sourceDatabase = firstNonEmpty(sourceDatabase, "postgres")
+	if isPostgresLogicalFamily(string(instance.DbType)) {
+		sourceDatabase = firstNonEmpty(sourceDatabase, logicalDefaultDatabase(string(instance.DbType)))
 	} else {
 		sourceDatabase = firstNonEmpty(sourceDatabase, "mysql")
 	}
@@ -418,10 +418,16 @@ func buildLogicalBackupTaskPrecheckContext(form *backupForms.PrecheckBackupTaskF
 	} else {
 		serverVersion, err = probePostgresVersion(strings.TrimSpace(instance.Hostname), instance.Port, strings.TrimSpace(string(instance.User)), strings.TrimSpace(string(instance.Password)), sourceDatabase, sslMode)
 		if err != nil {
-			return nil, fmt.Errorf("探测 PostgreSQL 服务端版本失败: %w", err)
+			return nil, fmt.Errorf("探测 %s 服务端版本失败: %w", logicalDBLabel(string(instance.DbType)), err)
 		}
-		serverMajor, _ = postgresMajorTag(serverVersion)
-		recommendedToolMajor = firstNonEmpty(serverMajor, serverVersion)
+		if isKingbaseDBType(string(instance.DbType)) {
+			// 金仓版本形如 V009R001C010，没有 PG major 概念，客户端与内核同包发布，
+			// 不做「建议安装 PostgreSQL N 客户端」的提示，避免把用户引到错的地方。
+			recommendedToolMajor = ""
+		} else {
+			serverMajor, _ = postgresMajorTag(serverVersion)
+			recommendedToolMajor = firstNonEmpty(serverMajor, serverVersion)
+		}
 	}
 	repositoryPath := strings.TrimSpace(outputDir)
 	if string(storageTarget.Type) == "LOCAL_SERVER" {

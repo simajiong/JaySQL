@@ -123,6 +123,16 @@ func TestInferBackupMeta(t *testing.T) {
 		t.Fatalf("未知备份方式应报错")
 	}
 
+	// 金仓：无物理备份工具链，未指定时必须落逻辑；同时校验各种写法的类型归一。
+	for _, dbType := range []string{"Kingbase", "KingbaseES", "kingbasees", "Kingbase ES"} {
+		if got, err := inferBackupDriverType(dbType, "", nil); err != nil || got != "LOGICAL" {
+			t.Fatalf("%s 未指定备份方式时应推导逻辑备份，got %q err %v", dbType, got, err)
+		}
+		if _, err := inferBackupDriverType(dbType, "PG_BACKREST", nil); err == nil {
+			t.Fatalf("%s 指定 pgBackRest 应报错（金仓无该工具链）", dbType)
+		}
+	}
+
 	days, err := normalizeBackupScheduleDays([]string{"周二", "SUNDAY", "周二"})
 	if err != nil {
 		t.Fatalf("调度星期归一失败: %v", err)

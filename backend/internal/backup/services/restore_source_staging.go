@@ -513,6 +513,16 @@ func resolveRemoteToolPath(ctx context.Context, a *restoreTargetAccess, toolName
 	if dir := strings.TrimSpace(a.ToolsDir); dir != "" {
 		candidates = append([]string{fmt.Sprintf("[ -x %s ] && echo %s", shellQuote(dir+"/"+toolName), shellQuote(dir+"/"+toolName))}, candidates...)
 	}
+	// 金仓客户端装机目录不在默认 PATH 里（sys_restore / ksql），补一轮固定路径探测，
+	// 否则「目标机有客户端但没配 PATH」会被误判成未安装。
+	for _, dir := range []string{
+		"/opt/Kingbase/ES/V8/Server/bin",
+		"/opt/Kingbase/ES/V8/bin",
+		"/opt/Kingbase/Server/bin",
+	} {
+		full := dir + "/" + toolName
+		candidates = append(candidates, fmt.Sprintf("[ -x %s ] && echo %s", shellQuote(full), shellQuote(full)))
+	}
 	script := strings.Join(candidates, "\n") + "\n"
 	out, err := runRemoteShellCapture(ctx, a, script, nil, nil)
 	if err != nil || strings.TrimSpace(out) == "" {

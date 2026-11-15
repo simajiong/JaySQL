@@ -37,8 +37,8 @@ func appendRestorePrivilegeCheck(set *backupModels.InsightBackupSets, targetInst
 	if set == nil || targetInstance == nil {
 		return
 	}
-	switch strings.TrimSpace(string(set.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 		grants, err := probeMySQLGrants(targetInstance)
 		if err != nil {
 			addWarn("阶段1", "target_privilege", "目标库权限检查", "无法读取目标账号授权信息，请人工确认权限是否满足恢复要求。", map[string]any{"error": err.Error()})
@@ -50,7 +50,7 @@ func appendRestorePrivilegeCheck(set *backupModels.InsightBackupSets, targetInst
 			return
 		}
 		addPass("阶段1", "target_privilege", "目标库权限检查", "目标数据库账号权限满足恢复要求。", map[string]any{"grants": grants})
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(set.DBType)):
 		isSuper, canCreateDB, err := postgresRolePrivileges(targetInstance)
 		if err != nil {
 			addWarn("阶段1", "target_privilege", "目标库权限检查", "无法读取目标账号角色信息，请人工确认权限是否满足恢复要求。", map[string]any{"error": err.Error()})
@@ -74,12 +74,12 @@ func appendRestoreEnvironmentChecks(set *backupModels.InsightBackupSets, targetI
 
 	source := loadInstanceByIDSilent(set.SourceInstanceID)
 
-	switch dbType {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(dbType), "MySQL"):
 		appendMySQLSQLModeCheck(setFile, source, targetInstance, addPass, addWarn)
 		appendMySQLLowerCaseCheck(source, targetInstance, addPass, addWarn)
 		appendMySQLTimeZoneCheck(source, targetInstance, addPass, addWarn)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(dbType):
 		appendPostgresTimeZoneCheck(source, targetInstance, addPass, addWarn)
 	default:
 		_ = addBlock

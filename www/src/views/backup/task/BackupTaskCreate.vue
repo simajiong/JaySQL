@@ -732,12 +732,22 @@ const physicalDriverHint = computed(() => {
 })
 const logicalBackupIncludesSchema = computed(() => formData.backup_type === 'FULL' || formData.backup_type === 'SCHEMA')
 const logicalBackupIncludesData = computed(() => formData.backup_type === 'FULL' || formData.backup_type === 'DATA')
-const logicalToolPathLabel = computed(() => (currentInstance.value?.db_type === 'PostgreSQL' ? 'pg_dump 路径' : 'mysqldump 路径'))
-const logicalToolPathPlaceholder = computed(() =>
-  currentInstance.value?.db_type === 'PostgreSQL'
+// 金仓走 PG 逻辑通道，但客户端工具是 sys_dump / sys_restore / ksql，
+// 提示文案必须跟着换，否则运维会照着 pg_dump 的路径去找（金仓装机没有这个文件）。
+const isKingbaseInstance = computed(() => {
+  const dbType = String(currentInstance.value?.db_type || '').trim().toLowerCase()
+  return dbType.startsWith('kingbase')
+})
+const logicalToolPathLabel = computed(() => {
+  if (isKingbaseInstance.value) return 'sys_dump 路径'
+  return currentInstance.value?.db_type === 'PostgreSQL' ? 'pg_dump 路径' : 'mysqldump 路径'
+})
+const logicalToolPathPlaceholder = computed(() => {
+  if (isKingbaseInstance.value) return '例如 /opt/Kingbase/ES/V8/Server/bin/sys_dump'
+  return currentInstance.value?.db_type === 'PostgreSQL'
     ? '例如 /usr/local/pgsql/bin/pg_dump'
-    : '例如 /usr/local/mysql/bin/mysqldump',
-)
+    : '例如 /usr/local/mysql/bin/mysqldump'
+})
 const physicalOutputDirPlaceholder = computed(() =>
   isMySQLPhysicalDriver.value
     ? '留空使用存储目标根路径下的 xtrabackup/mysql 自动子目录，或填入相对路径，例如 project-a/cluster-01'
@@ -1569,7 +1579,8 @@ const ensureObjectNodeChildrenLoaded = async (data) => {
   if (dbType === 'MySQL' && data.node_kind === 'database') {
     params = { instance_id: formData.source_instance_id, level: 'tables', database: data.database }
   }
-  if (dbType === 'PostgreSQL') {
+  // 金仓的对象层级与 PG 一致（库 → schema → 表），共用同一套懒加载分支
+  if (dbType === 'PostgreSQL' || isKingbaseInstance.value) {
     if (data.node_kind === 'database') {
       params = { instance_id: formData.source_instance_id, level: 'schemas', database: data.database }
     } else if (data.node_kind === 'schema') {
@@ -1695,7 +1706,9 @@ const handleInstanceChange = async () => {
   uiState.instanceRuntimeError = ''
   if (isPhysicalDriver.value && !physicalDriverAvailable.value) {
     formData.driver_type = 'LOGICAL'
-    message.warning('当前仅 PostgreSQL / MySQL 支持物理备份，已自动切回逻辑备份。')
+    message.warning(isKingbaseInstance.value
+      ? '金仓暂无物理备份工具链（无 pgBackRest / XtraBackup），已自动切回逻辑备份（sys_dump）。'
+      : '当前仅 PostgreSQL / MySQL 支持物理备份，已自动切回逻辑备份。')
   } else if (isPhysicalDriver.value && physicalDriverType.value && formData.driver_type !== physicalDriverType.value) {
     formData.driver_type = physicalDriverType.value
   }

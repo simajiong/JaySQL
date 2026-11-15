@@ -198,7 +198,9 @@ func validateRestoreRunInput(form *backupForms.CreateRestoreRunForm) (*backupMod
 	if err != nil {
 		return nil, nil, err
 	}
-	if string(set.DBType) != string(targetInstance.DbType) {
+	// 同家族内放行（Kingbase ↔ KingbaseES / PostgreSQL ↔ Kingbase 的写法与协议差异），
+	// 跨家族（如 MySQL 备份恢复到金仓）仍然拒绝。
+	if !sameLogicalFamily(string(set.DBType), string(targetInstance.DbType)) {
 		return nil, nil, fmt.Errorf("目标实例类型与备份集类型不一致")
 	}
 	return set, targetInstance, nil
@@ -340,7 +342,7 @@ func deriveRestoreTargetDisplay(dbType string, objectMode string, targetDBName s
 		}
 		return fmt.Sprintf("全部实例（后缀：%s）", suffix)
 	}
-	if strings.EqualFold(strings.TrimSpace(dbType), "PostgreSQL") && strings.EqualFold(strings.TrimSpace(objectMode), "ALL") {
+	if isPostgresLogicalFamily(dbType) && strings.EqualFold(strings.TrimSpace(objectMode), "ALL") {
 		suffix := strings.TrimSpace(targetDBName)
 		if suffix == "" {
 			return "全部库（同名恢复）"
@@ -378,7 +380,7 @@ func parseRestoreFilterTime(value string, endOfDay bool) (time.Time, error) {
 }
 
 func isPostgresLogicalMultiRestoreSet(set *backupModels.InsightBackupSets) bool {
-	if !strings.EqualFold(strings.TrimSpace(string(set.DBType)), "PostgreSQL") ||
+	if !isPostgresLogicalFamily(string(set.DBType)) ||
 		!strings.EqualFold(strings.TrimSpace(string(set.DriverType)), "LOGICAL") {
 		return false
 	}

@@ -537,12 +537,21 @@ func resolvePGBackRestRemoteToolPair(input BackupExecutionInput, cfg pgBackRestD
 }
 
 func probeServerVersionForLogical(input BackupExecutionInput) (string, error) {
-	switch strings.TrimSpace(input.DBType) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(input.DBType), "MySQL"):
 		return probeMySQLVersion(input.Instance.Hostname, input.Instance.Port, input.Instance.User, input.Instance.Password)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(input.DBType):
+		// 金仓同样用 PG 协议探测版本，返回形如 KingbaseES V009R001C010；
+		// 该版本串不参与客户端 major 校验（见 logical_family.go 的说明）。
 		extra := parseExtraConfig(input.Instance.ExtraConfig)
-		return probePostgresVersion(input.Instance.Hostname, input.Instance.Port, input.Instance.User, input.Instance.Password, firstNonEmpty(strings.TrimSpace(extra["database"]), "postgres"), strings.TrimSpace(extra["sslmode"]))
+		return probePostgresVersion(
+			input.Instance.Hostname,
+			input.Instance.Port,
+			input.Instance.User,
+			input.Instance.Password,
+			firstNonEmpty(strings.TrimSpace(extra["database"]), logicalDefaultDatabase(input.DBType)),
+			strings.TrimSpace(extra["sslmode"]),
+		)
 	default:
 		return "", fmt.Errorf("不支持的逻辑备份数据库类型: %s", strings.TrimSpace(input.DBType))
 	}

@@ -262,8 +262,8 @@ func (s *CreateBackupTaskService) Run() (*backupModels.InsightBackupTasks, error
 	if err != nil {
 		return nil, err
 	}
-	if string(instance.DbType) != "MySQL" && string(instance.DbType) != "PostgreSQL" {
-		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL 实例")
+	if !strings.EqualFold(strings.TrimSpace(string(instance.DbType)), "MySQL") && !isPostgresLogicalFamily(string(instance.DbType)) {
+		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL/Kingbase 实例")
 	}
 
 	backupType := normalizeBackupType(s.BackupType)
@@ -432,8 +432,8 @@ func (s *UpdateBackupTaskService) Run() error {
 	if err != nil {
 		return err
 	}
-	if string(instance.DbType) != "MySQL" && string(instance.DbType) != "PostgreSQL" {
-		return fmt.Errorf("仅支持 MySQL/PostgreSQL 实例")
+	if !strings.EqualFold(strings.TrimSpace(string(instance.DbType)), "MySQL") && !isPostgresLogicalFamily(string(instance.DbType)) {
+		return fmt.Errorf("仅支持 MySQL/PostgreSQL/Kingbase 实例")
 	}
 
 	var current backupModels.InsightBackupTasks

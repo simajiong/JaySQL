@@ -32,13 +32,15 @@ func (s *GetBackupObjectsService) Run() (interface{}, error) {
 	dbType := string(instance.DbType)
 	level := strings.TrimSpace(s.Level)
 
-	switch dbType {
-	case "MySQL":
+	// PostgreSQL 与 KingbaseES 的对象树（库 → schema → 表）一致，复用同一套查询；
+	// 金仓走 PG 协议，information_schema / pg_catalog 均可用。
+	switch {
+	case strings.EqualFold(strings.TrimSpace(dbType), "MySQL"):
 		return s.runMySQL(instance, level)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(dbType):
 		return s.runPostgres(instance, level)
 	default:
-		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL")
+		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL/Kingbase")
 	}
 }
 

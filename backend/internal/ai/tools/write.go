@@ -186,8 +186,8 @@ func createBackupTool() *Tool {
 				return nil, err
 			}
 			dbType := plainString(instance.DbType)
-			if dbType != "MySQL" && dbType != "PostgreSQL" {
-				return nil, fmt.Errorf("备份任务仅支持 MySQL/PostgreSQL 实例，当前实例类型为 %s", dbType)
+			if dbType != "MySQL" && dbType != "PostgreSQL" && !isKingbaseDBType(dbType) {
+				return nil, fmt.Errorf("备份任务仅支持 MySQL/PostgreSQL/KingbaseES 实例，当前实例类型为 %s", dbType)
 			}
 
 			databases := argStringList(args, "databases", "database")
@@ -346,12 +346,23 @@ func normalizeBackupScheduleDays(raw []string) ([]string, error) {
 	return out, nil
 }
 
+// isKingbaseDBType 金仓实例类型归一：库里存的写法历史上有 Kingbase / KingbaseES 等多种，
+// 统一按前缀小写匹配，避免新增一种写法就漏一处判断。
+func isKingbaseDBType(dbType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(dbType))
+	return strings.HasPrefix(normalized, "kingbase")
+}
+
 // inferBackupDriverType 备份方式推导：
 // 明确指定时用指定值（并校验与实例类型匹配）；未指定时，给了库名走逻辑备份，否则走物理备份。
+// 金仓无 pgBackRest 工具链，未指定时一律推逻辑备份，避免模型把物理备份挂到金仓上。
 func inferBackupDriverType(dbType, raw string, databases []string) (string, error) {
 	driver := strings.ToUpper(strings.TrimSpace(raw))
 	if driver == "" {
 		if len(databases) > 0 {
+			return "LOGICAL", nil
+		}
+		if isKingbaseDBType(dbType) {
 			return "LOGICAL", nil
 		}
 		if dbType == "PostgreSQL" {
@@ -386,7 +397,7 @@ func backupDriverText(driverType string) string {
 	case "PG_BACKREST":
 		return "物理备份（pgBackRest）"
 	default:
-		return "逻辑备份（mysqldump/pg_dump）"
+		return "逻辑备份（mysqldump/pg_dump/sys_dump）"
 	}
 }
 

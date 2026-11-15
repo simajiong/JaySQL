@@ -33,7 +33,10 @@ func (s *GetInstancesService) Run() (data interface{}, total int64, err error) {
 			COALESCE(e.name, '') AS environment_name,
 			COALESCE(e.env_type, '') AS env_type`).
 		Joins("LEFT JOIN insight_instance_environments AS e ON e.id = i.environment").
-		Where("i.db_type in ('MySQL','PostgreSQL')")
+		// 备份可选的实例范围：逻辑备份支持 MySQL / PostgreSQL / Kingbase；
+		// 物理备份（pgBackRest / XtraBackup）只在前端按类型收窄，这里不预先排除，
+		// 否则金仓这类"只有逻辑备份可用"的库在创建页根本选不到数据源。
+		Where("i.db_type in ('MySQL','PostgreSQL','Kingbase','KingbaseES')")
 	if s.Search != "" {
 		tx = tx.Where("i.hostname like ? or i.remark like ?", "%"+s.Search+"%", "%"+s.Search+"%")
 	}

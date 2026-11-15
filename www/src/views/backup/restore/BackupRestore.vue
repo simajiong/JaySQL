@@ -527,7 +527,7 @@
           <a-form-item
             v-if="supportsSchemaSelection"
             label="指定 Schema"
-            extra="仅 PostgreSQL 逻辑恢复生效；留空表示不额外筛选。"
+            extra="仅 PostgreSQL / 金仓逻辑恢复生效；留空表示不额外筛选。"
           >
             <a-select
               v-model:value="formData.selected_schemas"
@@ -540,7 +540,7 @@
           <a-form-item
             v-if="supportsTableSelection"
             label="指定表"
-            extra="仅 PostgreSQL 逻辑恢复生效；格式建议 schema.table。"
+            extra="仅 PostgreSQL / 金仓逻辑恢复生效；格式建议 schema.table。"
           >
             <a-select
               v-model:value="formData.selected_tables"
@@ -577,7 +577,7 @@
                     placeholder="例如 utf8mb4_unicode_ci"
                   />
                 </div>
-                <div v-if="selectedBackupSet?.db_type === 'PostgreSQL'" class="advanced-field">
+                <div v-if="isPostgresLogicalSet" class="advanced-field">
                   <span class="advanced-label">目标编码</span>
                   <a-input v-model:value="formData.target_encoding" placeholder="例如 UTF8" />
                 </div>
@@ -594,19 +594,19 @@
                   un-checked-children="允许继续"
                 />
                 <a-switch
-                  v-if="selectedBackupSet?.db_type === 'PostgreSQL'"
+                  v-if="isPostgresLogicalSet"
                   v-model:checked="formData.no_owner"
                   checked-children="忽略 Owner"
                   un-checked-children="保留 Owner"
                 />
                 <a-switch
-                  v-if="selectedBackupSet?.db_type === 'PostgreSQL'"
+                  v-if="isPostgresLogicalSet"
                   v-model:checked="formData.no_privileges"
                   checked-children="忽略权限"
                   un-checked-children="保留权限"
                 />
                 <a-switch
-                  v-if="selectedBackupSet?.db_type === 'PostgreSQL'"
+                  v-if="isPostgresLogicalSet"
                   v-model:checked="formData.clean_if_exists"
                   checked-children="清理已存在对象"
                   un-checked-children="不清理已存在对象"
@@ -1573,9 +1573,20 @@ const selectedBackupSet = computed(
   () => sets.value.find((item) => item.id === formData.backup_set_id) || null,
 )
 
+// 金仓类型归一（Kingbase / KingbaseES 两种写法都认）
+const isKingbaseDbType = (dbType) => /^kingbase/i.test(String(dbType || '').trim())
+
+// 金仓（Kingbase）与 PostgreSQL 共用逻辑恢复通道：sys_restore / ksql 的参数与
+// pg_restore / psql 同源，所以「忽略 Owner / 忽略权限 / 清理已存在对象 / 目标编码」
+// 这些选项对金仓同样有效，必须一起放开，否则金仓备份集在向导里少一半选项。
+const isKingbaseSet = computed(() => {
+  const dbType = String(selectedBackupSet.value?.db_type || '').trim().toLowerCase()
+  return dbType === 'kingbase' || dbType === 'kingbasees'
+})
+
 const isPostgresLogicalMultiRestore = computed(
   () =>
-    selectedBackupSet.value?.db_type === 'PostgreSQL' &&
+    (selectedBackupSet.value?.db_type === 'PostgreSQL' || isKingbaseSet.value) &&
     selectedBackupSet.value?.driver_type !== 'PG_BACKREST' &&
     (selectedBackupSet.value?.object_mode === 'ALL' || !selectedBackupSet.value?.source_db_name),
 )
@@ -1588,6 +1599,14 @@ const isPhysicalRestoreSet = computed(() => {
   if (set.db_type === 'MySQL' && driverType === 'XTRABACKUP') return true
   return false
 })
+
+// 放在 isPhysicalRestoreSet 之后：computed 虽惰性求值，但依赖顺序更清晰，
+// 也避免后续维护者误以为可以提前读取。
+const isPostgresLogicalSet = computed(
+  () =>
+    !isPhysicalRestoreSet.value &&
+    (selectedBackupSet.value?.db_type === 'PostgreSQL' || isKingbaseSet.value),
+)
 
 const selectedSetIsMySQL = computed(() => {
   const set = selectedBackupSet.value
@@ -1610,13 +1629,9 @@ const supportsDatabaseSelection = computed(
     (selectedBackupSet.value?.object_mode === 'ALL' || !selectedBackupSet.value?.source_db_name),
 )
 
-const supportsSchemaSelection = computed(
-  () => !isPhysicalRestoreSet.value && selectedBackupSet.value?.db_type === 'PostgreSQL',
-)
+const supportsSchemaSelection = computed(() => isPostgresLogicalSet.value)
 
-const supportsTableSelection = computed(
-  () => !isPhysicalRestoreSet.value && selectedBackupSet.value?.db_type === 'PostgreSQL',
-)
+const supportsTableSelection = computed(() => isPostgresLogicalSet.value)
 
 const restoreObjectDisplay = computed(() => {
   if (!selectedBackupSet.value) return ''
@@ -1780,7 +1795,7 @@ const targetDbExtra = computed(() =>
   isPhysicalRestoreSet.value
     ? '物理恢复在当前数据恢复页面内完成，需先执行预检查后再提交。'
     : isPostgresLogicalMultiRestore.value
-      ? '系统会识别备份集中的全部 PostgreSQL 数据库，并按“源库名 + 后缀”批量恢复。'
+      ? `系统会识别备份集中的全部 ${isKingbaseSet.value ? '金仓' : 'PostgreSQL'} 数据库，并按“源库名 + 后缀”批量恢复。`
       : '逻辑恢复默认要求新目标库名，若目标库已存在会直接拒绝提交。',
 )
 
@@ -2524,7 +2539,7 @@ const handleSetChange = (id) => {
   }
   formData.restore_mode = normalizeLogicalRestoreMode(formData.restore_mode)
   if (
-    item.db_type === 'PostgreSQL' &&
+    (item.db_type === 'PostgreSQL' || isKingbaseDbType(item.db_type)) &&
     item.driver_type !== 'PG_BACKREST' &&
     (item.object_mode === 'ALL' || !item.source_db_name)
   ) {

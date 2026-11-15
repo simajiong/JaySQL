@@ -42,6 +42,8 @@ const route = {
       'das.access.apply',
       'das.access.approve',
       'das.access.view',
+      'datasec.rule.view',
+      'datasec.plain.request',
     ],
   },
   children: [
@@ -108,6 +110,19 @@ const route = {
         hidden: true,
         activeMenu: '/datasource/access',
         permission: 'das.access.apply',
+      },
+    },
+    {
+      // 数据安全（脱敏）：规则 / 库表列配置与自动发现 / 明文工单，单页内三 Tab。
+      // 查看规则或发起明文申请任一权限命中即可进入，页面内按 hasPermission 收敛操作。
+      name: 'datasource.datasec',
+      path: '/datasource/datasec',
+      component: lazyImport(() => import('./datasec/DataSec.vue')),
+      meta: {
+        title: '数据安全',
+        icon: 'SecurityScanOutlined',
+        keepAlive: true,
+        permission: ['datasec.rule.view', 'datasec.plain.request'],
       },
     },
     {

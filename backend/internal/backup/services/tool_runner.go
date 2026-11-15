@@ -253,6 +253,90 @@ func resolveConfiguredLogicalToolSpec(dbType string, serverVersion string, cfg l
 	return spec, nil
 }
 
+// resolveLogicalClientTool 解析逻辑备份/恢复所需的客户端工具。
+//   - PostgreSQL：沿用原有解析链（随程序发布目录 → DB OS 用户上下文 + major 强校验）
+//   - KingbaseES：跳过 major 校验，按装机目录与金仓 OS 用户查找 sys_dump / sys_restore / ksql
+func resolveLogicalClientTool(dbType string, role string, serverVersion string) (*localToolSpec, error) {
+	if !isKingbaseDBType(dbType) {
+		return resolvePostgresClientTool(logicalToolName(dbType, role), serverVersion)
+	}
+	candidates := logicalToolNameCandidates(dbType, role)
+	var lastErr error
+	for _, name := range candidates {
+		spec, err := resolveKingbaseClientTool(name)
+		if err == nil {
+			return spec, nil
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf(
+		"未找到金仓客户端工具 %v：请确认数据库服务器已安装完整客户端，或将 sys_dump/sys_restore/ksql 所在目录加入 PATH（默认 /opt/Kingbase/ES/V8/Server/bin），也可在任务「高级选项」里手填工具路径。底层错误: %v",
+		candidates, lastErr,
+	)
+}
+
+func resolveKingbaseClientTool(toolName string) (*localToolSpec, error) {
+	name := strings.TrimSpace(toolName)
+	if name == "" {
+		return nil, fmt.Errorf("工具名不能为空")
+	}
+	buildSpec := func(path string, version string, source string) *localToolSpec {
+		return &localToolSpec{
+			Path:    path,
+			Name:    name,
+			Version: version,
+			Source:  source,
+			LibDirs: detectToolLibDirs(path),
+		}
+	}
+	// 1) 随程序发布的 tools 目录 / 常见装机目录直接命中（不走 sudo，最快）
+	for _, base := range backupToolBaseDirs() {
+		for _, candidate := range toolCandidatePaths(base, "kingbase", "", name) {
+			if isExecutableFile(candidate) {
+				return buildSpec(candidate, probeCommandVersion(candidate), "local:kingbase"), nil
+			}
+		}
+	}
+	for _, dir := range logicalToolInstallDirs("Kingbase") {
+		candidate := filepath.Join(dir, name)
+		if isExecutableFile(candidate) {
+			return buildSpec(candidate, probeCommandVersion(candidate), "local:kingbase"), nil
+		}
+	}
+	// 2) 以金仓 OS 用户身份在 PATH 中查找（README 里让运维把 bin 加进 kingbase 用户的 PATH）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	output, err := runLocalCommandCaptureAsDBUser(
+		ctx,
+		"Kingbase",
+		"",
+		"/bin/sh",
+		[]string{"-lc", buildResolveKingbaseToolAsDBUserScript(name)},
+		nil,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	parsed := parseKeyValueOutput(output)
+	path := strings.TrimSpace(parsed["TOOL_PATH"])
+	if path == "" {
+		return nil, fmt.Errorf("数据库 OS 用户上下文未找到 %s", name)
+	}
+	return buildSpec(path, strings.TrimSpace(parsed["VERSION_LINE"]), "db_user:path"), nil
+}
+
+func buildResolveKingbaseToolAsDBUserScript(toolName string) string {
+	return strings.Join([]string{
+		"set -e",
+		"TOOL_NAME=" + shellQuote(strings.TrimSpace(toolName)),
+		buildKingbaseToolLookupSnippet(),
+		`if [ -z "$TOOL_PATH" ]; then exit 41; fi`,
+		`echo TOOL_PATH=$TOOL_PATH`,
+		`echo VERSION_LINE=$VERSION_LINE`,
+	}, "\n")
+}
+
 func resolvePostgresClientToolAsDBUser(toolName string, serverVersion string) (*localToolSpec, error) {
 	name := strings.TrimSpace(toolName)
 	if name == "" {
@@ -349,8 +433,33 @@ func buildPostgresToolLookupSnippet() string {
 	}, "\n")
 }
 
-func resolveLocalTool(family string, toolName string, versions []string) (*localToolSpec, error) {
-	name := strings.TrimSpace(toolName)
+// buildKingbaseToolLookupSnippet 金仓客户端探测片段。
+// 与 PG 版的结构完全一致，只是候选目录换成金仓装机目录：
+// 金仓默认把 sys_dump / sys_restore / ksql 放在 <安装目录>/Server/bin 下，
+// 不在 PATH 里，也没有 /usr/pgsql-<major>/bin 这种按 major 分目录的布局。
+func buildKingbaseToolLookupSnippet() string {
+	candidates := []string{
+		`"/opt/Kingbase/ES/V8/Server/bin/$TOOL_NAME"`,
+		`"/opt/Kingbase/ES/V8/bin/$TOOL_NAME"`,
+		`"/opt/Kingbase/Server/bin/$TOOL_NAME"`,
+		`"/home/kingbase/Kingbase/ES/V8/Server/bin/$TOOL_NAME"`,
+		`"/usr/local/Kingbase/ES/V8/Server/bin/$TOOL_NAME"`,
+		`"/usr/local/bin/$TOOL_NAME"`,
+		`"/usr/bin/$TOOL_NAME"`,
+		`"/bin/$TOOL_NAME"`,
+	}
+	return strings.Join([]string{
+		`find_first_executable() { for candidate in "$@"; do if [ -n "$candidate" ] && [ -x "$candidate" ]; then printf "%s\n" "$candidate"; return 0; fi; done; return 1; }`,
+		`export PATH="${PROCESS_BIN_DIR:+$PROCESS_BIN_DIR:}/opt/Kingbase/ES/V8/Server/bin:/opt/Kingbase/ES/V8/bin:/opt/Kingbase/Server/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"`,
+		`TOOL_PATH=$(command -v "$TOOL_NAME" 2>/dev/null || true)`,
+		`if [ -z "$TOOL_PATH" ] && [ -n "$PROCESS_BIN_DIR" ]; then TOOL_PATH=$(find_first_executable "$PROCESS_BIN_DIR/$TOOL_NAME" 2>/dev/null || true); fi`,
+		`if [ -z "$TOOL_PATH" ]; then TOOL_PATH=$(find_first_executable ` + strings.Join(candidates, " ") + ` 2>/dev/null || true); fi`,
+		`VERSION_LINE=""`,
+		`if [ -n "$TOOL_PATH" ]; then VERSION_LINE=$("$TOOL_PATH" --version 2>/dev/null | head -n1 || true); fi`,
+	}, "\n")
+}
+
+func resolveLocalTool(family string, toolName string, versions []string) (*localToolSpec, error) {	name := strings.TrimSpace(toolName)
 	if name == "" {
 		return nil, fmt.Errorf("工具名不能为空")
 	}
@@ -711,6 +820,11 @@ func detectDatabaseOSUser(dbType string) (string, error) {
 	case "POSTGRESQL", "PGSQL", "PG":
 		commPatterns = []string{"postmaster", "postgres"}
 		fallback = "postgres"
+	case "KINGBASE", "KINGBASEES", "KINGBASE ES", "KINGBASE-ES", "KINGBASEV8":
+		// 金仓服务端进程名是 kingbase（sys_ctl 拉起的单进程模型），
+		// 部分版本仍以 postgres 命名，二者都匹配；OS 用户默认 kingbase。
+		commPatterns = []string{"kingbase", "postmaster", "postgres"}
+		fallback = "kingbase"
 	default:
 		return "", fmt.Errorf("未知的数据库类型 %s，无法自动探测数据库安装部署 OS 用户", dbType)
 	}

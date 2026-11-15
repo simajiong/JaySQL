@@ -131,8 +131,11 @@ func finalizeLogicalToolResolution(dbType string, serverVersion string, cfg logi
 			Source:  logicalToolSource(cfg.ToolPath),
 			LibDirs: detectToolLibDirs(toolPath),
 		}
-		if strings.EqualFold(strings.TrimSpace(dbType), "PostgreSQL") {
-			if err := validatePostgresClientCompatibility("pg_dump", resolution.Spec, serverVersion); err != nil {
+		// 版本兼容校验只对 PostgreSQL 有意义：它要求客户端 major == 服务端 major。
+		// 金仓版本串是 V009R001C010，没有 PG major 概念，工具与内核同包发布，天然配套，
+		// 强行按 PG 规则比对只会把可用环境判成不可用。
+		if isPostgresLogicalFamily(dbType) && !isKingbaseDBType(dbType) {
+			if err := validatePostgresClientCompatibility(logicalToolName(dbType, logicalToolRoleDump), resolution.Spec, serverVersion); err != nil {
 				return resolution, err
 			}
 		}
@@ -272,12 +275,20 @@ func buildLogicalToolResolveProbeScript(dbType string, serverVersion string, too
 		}, "\n")
 	}
 
-	pgMajor := strings.TrimSpace(postgresExactClientVersion(serverVersion))
+	// PostgreSQL / KingbaseES 共用这一段探测脚本，差异只有工具名与安装目录：
+	//   PG      → pg_dump，按 PG_MAJOR 拼 /usr/pgsql-<major>/bin
+	//   Kingbase → sys_dump，直接查 /opt/Kingbase/ES/V8/Server/bin 等固定装机目录
+	pgMajor := strings.TrimSpace(postgresExactClientVersion(logicalServerVersionForTool(normalizedDBType, serverVersion)))
+	dumpToolName := logicalToolName(normalizedDBType, logicalToolRoleDump)
+	lookupSnippet := buildPostgresToolLookupSnippet()
+	if isKingbaseDBType(normalizedDBType) {
+		lookupSnippet = buildKingbaseToolLookupSnippet()
+	}
 	if normalizedToolPath != "" {
 		return strings.Join([]string{
 			"set +e",
 			shellProfileInitSnippet(),
-			buildConfiguredToolScript(buildPostgresToolLookupSnippet(), []string{
+			buildConfiguredToolScript(lookupSnippet, []string{
 				"PROCESS_BIN_DIR=${PROCESS_BIN_DIR:-}",
 				"PG_MAJOR=" + shellQuote(pgMajor),
 				`TOOL_NAME="$INPUT_TOOL_PATH"`,
@@ -293,8 +304,8 @@ func buildLogicalToolResolveProbeScript(dbType string, serverVersion string, too
 		`VERSION_LINE=""`,
 		`TOOL_ERROR=""`,
 		`STATUS=0`,
-		"TOOL_NAME=pg_dump",
-		buildPostgresToolLookupSnippet(),
+		"TOOL_NAME=" + shellQuote(dumpToolName),
+		lookupSnippet,
 		`if [ -z "$TOOL_PATH" ]; then TOOL_ERROR="tool_not_found"; STATUS=41; fi`,
 		`TOOL_USER=$(id -un 2>/dev/null || true)`,
 		`echo TOOL_USER=${TOOL_USER}`,

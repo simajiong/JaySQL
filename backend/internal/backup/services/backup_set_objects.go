@@ -92,10 +92,10 @@ func GetBackupSetObjectsService(backupSetID uint64) (*BackupSetObjectsResult, er
 		result.Hint = "备份文件当前不可访问，无法解析恢复对象：" + fileErr.Error()
 		return result, nil
 	}
-	switch result.DBType {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(result.DBType), "MySQL"):
 		appendMySQLLogicalObjects(result, set, setFile)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(result.DBType):
 		appendPostgresLogicalObjects(result, set, setFile)
 	default:
 		result.Hint = "暂不支持解析该数据库类型的备份对象。"

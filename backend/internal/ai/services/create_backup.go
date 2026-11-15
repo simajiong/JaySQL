@@ -164,12 +164,27 @@ func (s *ConfirmCreateBackupService) Run() (*ConfirmCreateBackupResult, error) {
 	}, nil
 }
 
+// isKingbaseDBType 金仓（Kingbase / KingbaseES）归一判断。
+// AI 侧的备份编排需要与备份模块保持同一套认知：金仓走逻辑备份（sys_dump），
+// 它没有 pgBackRest / XtraBackup 工具链，不能被默认推导成物理备份。
+func isKingbaseDBType(dbType string) bool {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "kingbase", "kingbasees", "kingbase es", "kingbase-es", "kingbasev8", "kingbase v8":
+		return true
+	}
+	return false
+}
+
 // resolveBackupDriverType 备份方式推导与校验：
-// 未指定时 MySQL → XTRABACKUP（物理），PostgreSQL → PG_BACKREST（物理）；
+// 未指定时 MySQL → XTRABACKUP（物理），PostgreSQL → PG_BACKREST（物理），
+// 金仓 → LOGICAL（金仓无物理备份工具链，只能逻辑备份）；
 // 指定时必须与实例类型匹配，避免模型把物理备份挂到不支持的实例上。
 func resolveBackupDriverType(dbType, raw string) (string, error) {
 	driver := strings.ToUpper(strings.TrimSpace(raw))
 	if driver == "" {
+		if isKingbaseDBType(dbType) {
+			return "LOGICAL", nil
+		}
 		if dbType == "PostgreSQL" {
 			return "PG_BACKREST", nil
 		}
@@ -221,8 +236,8 @@ func buildBackupObjectSpec(dbType, objectMode string, databases []string) (map[s
 
 	items := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		if dbType == "PostgreSQL" {
-			// PG 的库下还有 schema / table 维度，这里只到库级，schemas 留空表示整库
+		if dbType == "PostgreSQL" || isKingbaseDBType(dbType) {
+			// PG / 金仓的库下还有 schema / table 维度，这里只到库级，schemas 留空表示整库
 			items = append(items, map[string]any{"name": name, "schemas": []string{}, "tables": []any{}})
 			continue
 		}
@@ -297,7 +312,7 @@ func driverTypeText(driverType string) string {
 	case "PG_BACKREST":
 		return "物理备份（pgBackRest）"
 	default:
-		return "逻辑备份（mysqldump/pg_dump）"
+		return "逻辑备份（mysqldump/pg_dump/sys_dump）"
 	}
 }
 

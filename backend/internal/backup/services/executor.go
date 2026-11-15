@@ -414,13 +414,15 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 	}
 
 	jobs := []dumpJob{}
-	switch input.DBType {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(input.DBType), "MySQL"):
 		jobs = normalized.Jobs
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(input.DBType):
+		// PostgreSQL / KingbaseES 共用同一套对象模型：ALL = 逐库 sys_dump，
+		// 自定义 = 按库/schema/表取子集。金仓的库清单同样走 PG 协议查询。
 		if normalized.ObjectMode == "ALL" {
 			sslmode := extra["sslmode"]
-			defaultDB := extra["database"]
+			defaultDB := firstNonEmpty(extra["database"], logicalDefaultDatabase(input.DBType))
 			dbs, err := listPostgresDatabases(input.Instance.Hostname, input.Instance.Port, input.Instance.User, input.Instance.Password, defaultDB, sslmode)
 			if err != nil {
 				return nil, err
@@ -462,8 +464,8 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 		logFile.Infof("[DirectStream 零落盘模式] 已启用流式直写 target=%s artifact=%s compression=%s level=%s", input.StreamSink.RemoteTarget(), artifactName, artifactPlan.StreamCompression, artifactPlan.CompressionLevel)
 	}
 
-	switch input.DBType {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(input.DBType), "MySQL"):
 		if err := runControl.Checkpoint(logFile); err != nil {
 			return nil, err
 		}
@@ -610,21 +612,26 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 				outputFiles = append(outputFiles, job.FileName)
 			}
 		}
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(input.DBType):
 		if err := runControl.Checkpoint(logFile); err != nil {
 			return nil, err
 		}
 		if unifiedPlan == nil || unifiedPlan.Logical == nil || unifiedPlan.Logical.Tool == nil {
-			return nil, fmt.Errorf("逻辑备份统一执行计划未生成 PostgreSQL 工具信息")
+			return nil, fmt.Errorf("逻辑备份统一执行计划未生成 %s 工具信息", logicalDBLabel(input.DBType))
 		}
 		sslmode := extra["sslmode"]
 		serverVersion = strings.TrimSpace(unifiedPlan.ServerVersion)
-		logFile.Infof("PostgreSQL 版本: %s", serverVersion)
+		logFile.Infof("%s 版本: %s", logicalDBLabel(input.DBType), serverVersion)
 		toolSpec := unifiedPlan.Logical.Tool
 		tool = toolSpec.Name
 		toolImage = toolSpec.Source
 		logFile.Infof("命中备份工具: %s (%s)", toolSpec.Path, toolSpec.Source)
+		// 金仓客户端与 PG 同源，兼容 PGPASSWORD；部分版本改读 KINGBASE_PASSWORD，
+		// 两个都设，避免因版本差异导致「密码没生效」的密码认证失败。
 		env := map[string]string{"PGPASSWORD": input.Instance.Password}
+		if isKingbaseDBType(input.DBType) {
+			env["KINGBASE_PASSWORD"] = input.Instance.Password
+		}
 		if sslmode != "" {
 			env["PGSSLMODE"] = sslmode
 		}
@@ -666,7 +673,10 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 				"-U", input.Instance.User,
 				"-d", job.DBName,
 				"--no-owner",
-				"--no-acl",
+				// 用 --no-privileges 而不是 --no-acl：两者在 PG 里等价，
+				// 但金仓各版本的 sys_dump 对 --no-acl 这别名支持不一致，
+				// 长名 --no-privileges 是两边都稳的那个。
+				"--no-privileges",
 			}
 			switch strings.ToUpper(strings.TrimSpace(job.BackupType)) {
 			case "SCHEMA":
@@ -688,6 +698,12 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 			}
 			targetPath := filepath.Join(dir, job.FileName)
 			parallelWorkers := recommendedPostgresDumpWorkers(job)
+			if isKingbaseDBType(input.DBType) {
+				// 金仓 sys_dump 对目录格式（-Fd）与并行（-j）的支持随版本/授权版本而异，
+				// 未逐版本实测前统一走自定义格式单文件（-Fc）：
+				// 产物是标准 PGDMP 容器，sys_restore 可直接读，多库场景由外层打 zip。
+				parallelWorkers = 1
+			}
 			useParallel := parallelWorkers > 1 && !useStream
 			if useParallel {
 				args = append(args, "-Fd", "-j", fmt.Sprintf("%d", parallelWorkers), "-f", targetPath)
@@ -702,34 +718,34 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 				if openErr != nil {
 					return nil, openErr
 				}
-				logFile.Infof("[DirectStream 零落盘模式] 开始导出 PostgreSQL database=%s entry=%s target=%s compression=%s format=custom", job.DBName, job.FileName, input.StreamSink.RemoteTarget(), artifactPlan.StreamCompression)
+				logFile.Infof("[DirectStream 零落盘模式] 开始导出 %s database=%s entry=%s target=%s compression=%s format=custom", logicalDBLabel(input.DBType), job.DBName, job.FileName, input.StreamSink.RemoteTarget(), artifactPlan.StreamCompression)
 				logFile.Infof("执行工具: %s (%s) [stdout→sink, 无本地 result-file]", toolSpec.Path, toolSpec.Source)
 				if strings.TrimSpace(unifiedPlan.Logical.EffectiveOSUser) != "" {
 					err = runLocalCommandAsUserWithStdoutOverride(ctx, unifiedPlan.Logical.EffectiveOSUser, "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile, entryWriter)
 				} else {
-					err = runLocalCommandAsDBUserWithStdoutOverride(ctx, "PostgreSQL", "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile, entryWriter)
+					err = runLocalCommandAsDBUserWithStdoutOverride(ctx, input.DBType, "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile, entryWriter)
 				}
 				if err != nil {
 					if runControl.StopRequested() {
 						return nil, ErrBackupRunStopped
 					}
-					logFile.Errorf("导出 PostgreSQL 失败 database=%s: %v", job.DBName, err)
+					logFile.Errorf("导出 %s 失败 database=%s: %v", logicalDBLabel(input.DBType), job.DBName, err)
 					return nil, err
 				}
-				logFile.Infof("[DirectStream] 导出 PostgreSQL 完成 database=%s entry=%s", job.DBName, job.FileName)
+				logFile.Infof("[DirectStream] 导出 %s 完成 database=%s entry=%s", logicalDBLabel(input.DBType), job.DBName, job.FileName)
 			} else {
-				logFile.Infof("开始导出 PostgreSQL database=%s schemas=%d tables=%d output=%s format=%s workers=%d", job.DBName, len(job.PgSchemas), len(pgTables), targetPath, postgresDumpFormatLabel(useParallel), parallelWorkers)
+				logFile.Infof("开始导出 %s database=%s schemas=%d tables=%d output=%s format=%s workers=%d", logicalDBLabel(input.DBType), job.DBName, len(job.PgSchemas), len(pgTables), targetPath, postgresDumpFormatLabel(useParallel), parallelWorkers)
 				logFile.Infof("执行工具: %s (%s)", toolSpec.Path, toolSpec.Source)
 				if strings.TrimSpace(unifiedPlan.Logical.EffectiveOSUser) != "" {
 					err = runLocalCommandAsUser(ctx, unifiedPlan.Logical.EffectiveOSUser, "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile)
 				} else {
-					err = runLocalCommandAsDBUser(ctx, "PostgreSQL", "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile)
+					err = runLocalCommandAsDBUser(ctx, input.DBType, "", toolSpec.Path, args, withLibraryPath(env, toolSpec.LibDirs), logFile)
 				}
 				if err != nil {
 					if runControl.StopRequested() {
 						return nil, ErrBackupRunStopped
 					}
-					logFile.Errorf("导出 PostgreSQL 失败 database=%s: %v", job.DBName, err)
+					logFile.Errorf("导出 %s 失败 database=%s: %v", logicalDBLabel(input.DBType), job.DBName, err)
 					return nil, err
 				}
 				if size, statErr := pathSize(targetPath); statErr == nil {
@@ -764,7 +780,7 @@ func ExecuteBackupJob(input BackupExecutionInput) (*BackupExecutionResult, error
 		if len(outputFiles) == 0 {
 			artifactPath = ""
 		}
-		shouldZip := len(outputFiles) > 1 || (len(outputFiles) > 0 && input.DBType == "PostgreSQL")
+		shouldZip := len(outputFiles) > 1 || (len(outputFiles) > 0 && isPostgresLogicalFamily(input.DBType))
 		if shouldZip {
 			artifactName = "backup.zip"
 			artifactPath = filepath.Join(dir, artifactName)

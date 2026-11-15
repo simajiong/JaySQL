@@ -1706,6 +1706,12 @@ const compactSha = (value) => {
 
 const isZipArtifact = (fileName) => String(fileName || '').trim().toLowerCase().endsWith('.zip')
 
+// 金仓与 PostgreSQL 共用同一条逻辑恢复通道（sys_restore / ksql 与 pg_restore / psql
+// 的参数完全对齐），因此整实例范围、zip 归档这两种「PG 支持而 MySQL 不支持」的形态，
+// 判断时按家族放行，不能只认 'PostgreSQL' 字面量。
+const isPostgresLogicalFamilyDbType = (dbType) =>
+  ['postgresql', 'kingbase', 'kingbasees', 'kingbase es'].includes(String(dbType || '').trim().toLowerCase())
+
 const resolveRestoreAction = (record) => {
   if (!record) {
     return { enabled: false, reason: '请选择一条执行记录后再发起恢复。' }
@@ -1726,10 +1732,10 @@ const resolveRestoreAction = (record) => {
   if (record.driver_type === 'XTRABACKUP') {
     return { enabled: false, reason: 'MySQL 物理备份恢复链路暂未在当前版本开放。' }
   }
-  if (record.object_mode === 'ALL' && runTaskDbType.value !== 'PostgreSQL') {
+  if (record.object_mode === 'ALL' && !isPostgresLogicalFamilyDbType(runTaskDbType.value)) {
     return { enabled: false, reason: '该备份集包含多个对象或整实例范围，当前暂不支持平台内一键恢复。' }
   }
-  if (runTaskDbType.value !== 'PostgreSQL' && isZipArtifact(record.file_name)) {
+  if (!isPostgresLogicalFamilyDbType(runTaskDbType.value) && isZipArtifact(record.file_name)) {
     return { enabled: false, reason: '该备份集是压缩归档形式，当前暂不支持平台内一键恢复。' }
   }
   return { enabled: true, reason: '' }

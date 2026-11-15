@@ -229,7 +229,12 @@ const props = defineProps({
 
 const emit = defineEmits(['change', 'change-instance'])
 
-const dbLabel = computed(() => (String(props.selectedSet?.db_type || '').toUpperCase() === 'POSTGRESQL' ? '库' : '数据库'))
+// 金仓与 PostgreSQL 同属 PG 家族：层级都是「库」而不是 MySQL 的「数据库」，
+// 目标实例也要同族放行（Kingbase 与 KingbaseES 只是写法差异，不能因此筛空列表）。
+const PG_FAMILY_DB_TYPES = ['postgresql', 'kingbase', 'kingbasees']
+const isPgFamily = (dbType) => PG_FAMILY_DB_TYPES.includes(String(dbType || '').trim().toLowerCase())
+
+const dbLabel = computed(() => (isPgFamily(props.selectedSet?.db_type) ? '库' : '数据库'))
 
 const supportsObjectSelect = computed(() => !props.isPhysical && !!props.objectsInfo.supports_object_select)
 
@@ -244,7 +249,12 @@ const targetStepDesc = computed(() => {
 const instanceOptions = computed(() => {
   const dbType = String(props.selectedSet?.db_type || '').trim().toLowerCase()
   return props.instances
-    .filter((item) => !dbType || String(item.db_type || '').trim().toLowerCase() === dbType)
+    .filter(
+      (item) =>
+        !dbType ||
+        String(item.db_type || '').trim().toLowerCase() === dbType ||
+        (isPgFamily(dbType) && isPgFamily(item.db_type)),
+    )
     .map((item) => {
       const hostPort = item.port ? `${item.hostname || ''}:${item.port}` : item.hostname || ''
       return {

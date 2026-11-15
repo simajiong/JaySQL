@@ -148,7 +148,7 @@ func PlanBackupArtifact(dbType string, driverType string, objectMode string, leg
 			StreamCompression: ArtifactCompressionNone,
 		}, nil
 	}
-	if strings.EqualFold(strings.TrimSpace(dbType), "PostgreSQL") {
+	if isPostgresLogicalFamily(dbType) {
 		return &BackupArtifactPlan{
 			ArtifactName:      "backup.zip",
 			StreamCompression: ArtifactCompressionZip,
@@ -205,14 +205,14 @@ func normalizeObjectSpec(dbType string, driverType string, objectMode string, le
 		if err := validateIdent(legacyDBName, "库名"); err != nil {
 			return nil, err
 		}
-		switch dbType {
-		case "MySQL":
+		switch {
+		case strings.EqualFold(strings.TrimSpace(dbType), "MySQL"):
 			rawSpec = map[string]any{
 				"databases": []map[string]any{
 					{"name": legacyDBName, "tables": []string{}},
 				},
 			}
-		case "PostgreSQL":
+		case isPostgresLogicalFamily(dbType):
 			rawSpec = map[string]any{
 				"databases": []map[string]any{
 					{"name": legacyDBName, "schemas": []string{}, "tables": []map[string]any{}},
@@ -221,13 +221,14 @@ func normalizeObjectSpec(dbType string, driverType string, objectMode string, le
 		}
 	}
 
-	switch dbType {
-	case "MySQL":
+	// PostgreSQL 与 KingbaseES 的对象模型一致（库 → schema → 表），复用同一套解析。
+	switch {
+	case strings.EqualFold(strings.TrimSpace(dbType), "MySQL"):
 		return normalizeMySQLObjectSpec(mode, bType, rawSpec)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(dbType):
 		return normalizePostgresObjectSpec(mode, bType, rawSpec)
 	default:
-		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL")
+		return nil, fmt.Errorf("仅支持 MySQL/PostgreSQL/Kingbase")
 	}
 }
 

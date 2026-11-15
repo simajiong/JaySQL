@@ -701,10 +701,10 @@ func parseChecksumFromFile(content string, fileName string) string {
 }
 
 func buildLogicalRestoreSourcePlans(set *backupModels.InsightBackupSets, setFile string, options logicalRestoreRunOptions) ([]logicalRestoreSourcePlan, string, error) {
-	switch strings.TrimSpace(string(set.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 		return buildMySQLRestoreSourcePlans(set, setFile, options)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(set.DBType)):
 		return buildPostgresRestoreSourcePlans(set, setFile, options)
 	default:
 		return nil, "", fmt.Errorf("不支持的 DB 类型")
@@ -988,12 +988,12 @@ func probeLogicalRestoreTargetVersion(set *backupModels.InsightBackupSets, targe
 	if set == nil || targetInstance == nil {
 		return "", fmt.Errorf("恢复目标信息不完整")
 	}
-	switch strings.TrimSpace(string(set.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 		return probeMySQLVersion(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(set.DBType)):
 		extra := parseExtraConfig(targetInstance.ExtraConfig)
-		return probePostgresVersion(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, extra["database"], extra["sslmode"])
+		return probePostgresVersion(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, firstNonEmpty(extra["database"], logicalDefaultDatabase(string(set.DBType))), extra["sslmode"])
 	default:
 		return "", fmt.Errorf("不支持的 DB 类型")
 	}
@@ -1004,8 +1004,8 @@ func detectLogicalRestoreReadOnly(set *backupModels.InsightBackupSets, targetIns
 	if set == nil || targetInstance == nil {
 		return false, detail, fmt.Errorf("目标实例为空")
 	}
-	switch strings.TrimSpace(string(set.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		db := dasDao.DB{
@@ -1027,7 +1027,7 @@ func detectLogicalRestoreReadOnly(set *backupModels.InsightBackupSets, targetIns
 		detail["read_only"] = fmt.Sprintf("%v", row["read_only"])
 		detail["super_read_only"] = fmt.Sprintf("%v", row["super_read_only"])
 		return isTruthLike(row["read_only"]) || isTruthLike(row["super_read_only"]), detail, nil
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(set.DBType)):
 		extra := parseExtraConfig(targetInstance.ExtraConfig)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1036,7 +1036,7 @@ func detectLogicalRestoreReadOnly(set *backupModels.InsightBackupSets, targetIns
 			Password: targetInstance.Password,
 			Host:     targetInstance.Hostname,
 			Port:     targetInstance.Port,
-			Database: firstNonEmpty(extra["database"], "postgres"),
+			Database: firstNonEmpty(extra["database"], logicalDefaultDatabase(string(set.DBType))),
 			SSLMode:  extra["sslmode"],
 			Ctx:      ctx,
 		}
@@ -1045,7 +1045,7 @@ func detectLogicalRestoreReadOnly(set *backupModels.InsightBackupSets, targetIns
 			return false, detail, err
 		}
 		if rows == nil || len(*rows) == 0 {
-			return false, detail, fmt.Errorf("未读取到 PostgreSQL 只读状态")
+			return false, detail, fmt.Errorf("未读取到 %s 只读状态", logicalDBLabel(string(set.DBType)))
 		}
 		row := (*rows)[0]
 		detail["transaction_read_only"] = fmt.Sprintf("%v", row["transaction_read_only"])
@@ -1130,13 +1130,13 @@ func logicalRestoreTargetExists(set *backupModels.InsightBackupSets, targetInsta
 	if strings.TrimSpace(targetDB) == "" {
 		return false, detail, nil
 	}
-	switch strings.TrimSpace(string(set.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 		exists, err := mysqlDatabaseExists(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, targetDB)
 		return exists, detail, err
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(set.DBType)):
 		extra := parseExtraConfig(targetInstance.ExtraConfig)
-		exists, err := postgresDatabaseExists(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, extra["database"], extra["sslmode"], targetDB)
+		exists, err := postgresDatabaseExists(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, firstNonEmpty(extra["database"], logicalDefaultDatabase(string(set.DBType))), extra["sslmode"], targetDB)
 		return exists, detail, err
 	default:
 		return false, detail, fmt.Errorf("不支持的 DB 类型")
@@ -1204,8 +1204,8 @@ func deriveLogicalRestoreRiskLevel(options logicalRestoreRunOptions, items []log
 func buildLogicalRestoreCommandPreview(set *backupModels.InsightBackupSets, targetInstance *commonModels.InsightInstances, options logicalRestoreRunOptions, sources []logicalRestoreSourcePlan, setFile string) []string {
 	commands := make([]string, 0, len(sources)*2)
 	for _, source := range sources {
-		switch strings.TrimSpace(string(set.DBType)) {
-		case "MySQL":
+		switch {
+		case strings.EqualFold(strings.TrimSpace(string(set.DBType)), "MySQL"):
 			if source.TargetObjectName != "" {
 				if strings.EqualFold(options.RestoreMode, logicalRestoreModeOverwrite) {
 					commands = append(commands, fmt.Sprintf("mysql --defaults-extra-file=/path/to/my.cnf -h %s -P %d -e %q", targetInstance.Hostname, targetInstance.Port, buildMySQLOverwriteSQL(source.TargetObjectName, options)))
@@ -1223,15 +1223,18 @@ func buildLogicalRestoreCommandPreview(set *backupModels.InsightBackupSets, targ
 				importCmd = fmt.Sprintf("%s < %s", importCmd, shellQuote(resolveSourcePreviewPath(setFile, source)))
 			}
 			commands = append(commands, importCmd)
-		case "PostgreSQL":
+		case isPostgresLogicalFamily(string(set.DBType)):
+			// 预览命令里的客户端名要跟着库类型走：金仓是 ksql / sys_restore
+			queryTool := logicalToolName(string(set.DBType), logicalToolRoleQuery)
+			adminDB := logicalDefaultDatabase(string(set.DBType))
 			if source.TargetObjectName != "" {
 				if strings.EqualFold(options.RestoreMode, logicalRestoreModeOverwrite) {
-					commands = append(commands, fmt.Sprintf("psql \"host=%s port=%d dbname=postgres user=%s\" -v ON_ERROR_STOP=1 -c %q", targetInstance.Hostname, targetInstance.Port, targetInstance.User, buildPostgresOverwriteSQL(source.TargetObjectName, options)))
+					commands = append(commands, fmt.Sprintf("%s \"host=%s port=%d dbname=%s user=%s\" -v ON_ERROR_STOP=1 -c %q", queryTool, targetInstance.Hostname, targetInstance.Port, adminDB, targetInstance.User, buildPostgresOverwriteSQL(source.TargetObjectName, options)))
 				} else if strings.EqualFold(options.RestoreMode, logicalRestoreModeNew) {
-					commands = append(commands, fmt.Sprintf("psql \"host=%s port=%d dbname=postgres user=%s\" -v ON_ERROR_STOP=1 -c %q", targetInstance.Hostname, targetInstance.Port, targetInstance.User, buildPostgresCreateDBSQL(source.TargetObjectName, options)))
+					commands = append(commands, fmt.Sprintf("%s \"host=%s port=%d dbname=%s user=%s\" -v ON_ERROR_STOP=1 -c %q", queryTool, targetInstance.Hostname, targetInstance.Port, adminDB, targetInstance.User, buildPostgresCreateDBSQL(source.TargetObjectName, options)))
 				}
 			}
-			restoreCmd := buildPostgresRestorePreviewCommand(targetInstance, options, source, resolveSourcePreviewPath(setFile, source))
+			restoreCmd := buildPostgresRestorePreviewCommand(string(set.DBType), targetInstance, options, source, resolveSourcePreviewPath(setFile, source))
 			commands = append(commands, restoreCmd)
 		}
 	}
@@ -1251,7 +1254,8 @@ func sourceHigherThanTarget(sourceVersion string, targetVersion string, dbType s
 	if len(sourceParts) == 0 || len(targetParts) == 0 {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(dbType), "PostgreSQL") {
+	if isPostgresLogicalFamily(dbType) {
+		// PG 家族只比较 major（16 → 15 允许，15 → 16 拒绝）
 		return sourceParts[0] > targetParts[0]
 	}
 	maxLen := len(sourceParts)
@@ -1350,10 +1354,10 @@ func executeLogicalRestoreRun(parent context.Context, rr backupModels.InsightRes
 		}
 	}()
 	updateLogicalRestoreRunState(rr.ID, "RUNNING", restoreStagePrepareSource, 10, "准备恢复环境", logPath, "")
-	switch strings.TrimSpace(string(rr.DBType)) {
-	case "MySQL":
+	switch {
+	case strings.EqualFold(strings.TrimSpace(string(rr.DBType)), "MySQL"):
 		return executeMySQLLogicalRestore(ctx, rr, set, targetInstance, options, resolved, logDir, logPath, logWriter, runControl)
-	case "PostgreSQL":
+	case isPostgresLogicalFamily(string(rr.DBType)):
 		return executePostgresLogicalRestore(ctx, rr, set, targetInstance, options, resolved, logDir, logPath, logWriter, runControl)
 	default:
 		return fmt.Errorf("不支持的 DB 类型")
@@ -1438,21 +1442,27 @@ func executeMySQLLogicalRestore(ctx context.Context, rr backupModels.InsightRest
 }
 
 func executePostgresLogicalRestore(ctx context.Context, rr backupModels.InsightRestoreRuns, _ *backupModels.InsightBackupSets, targetInstance *commonModels.InsightInstances, options logicalRestoreRunOptions, resolved logicalRestoreResolvedContext, logDir string, logPath string, logWriter io.Writer, runControl *restoreRunControl) error {
+	// 本函数同时服务 PostgreSQL 与 KingbaseES：工具名、默认库、OS 用户都由 dbType 决定，
+	// 流程本身完全一致（sys_restore/sys_dump 与 pg_restore/pg_dump 参数同源）。
+	dbType := string(rr.DBType)
 	extra := parseExtraConfig(targetInstance.ExtraConfig)
-	adminDB := firstNonEmpty(extra["database"], "postgres")
+	adminDB := firstNonEmpty(extra["database"], logicalDefaultDatabase(dbType))
 	serverVersion, err := probePostgresVersion(targetInstance.Hostname, targetInstance.Port, targetInstance.User, targetInstance.Password, adminDB, extra["sslmode"])
 	if err != nil {
 		return err
 	}
-	psqlTool, err := resolvePostgresClientTool("psql", serverVersion)
+	psqlTool, err := resolveLogicalClientTool(dbType, logicalToolRoleQuery, serverVersion)
 	if err != nil {
 		return err
 	}
-	pgRestoreTool, err := resolvePostgresClientTool("pg_restore", serverVersion)
+	pgRestoreTool, err := resolveLogicalClientTool(dbType, logicalToolRoleRestore, serverVersion)
 	if err != nil {
 		return err
 	}
 	env := map[string]string{"PGPASSWORD": targetInstance.Password}
+	if isKingbaseDBType(dbType) {
+		env["KINGBASE_PASSWORD"] = targetInstance.Password
+	}
 	if strings.TrimSpace(extra["sslmode"]) != "" {
 		env["PGSSLMODE"] = strings.TrimSpace(extra["sslmode"])
 	}
@@ -1473,15 +1483,16 @@ func executePostgresLogicalRestore(ctx context.Context, rr backupModels.InsightR
 			sourceFile = stage.LocalDownloadPath
 		}
 	}
-	// 远程模式：导入在目标机本地执行，pg_restore / psql 用目标机上的路径，缺失即报错中止。
+	// 远程模式：导入在目标机本地执行，sys_restore / ksql（或 pg_restore / psql）
+	// 用目标机上的路径，缺失即报错中止。
 	remotePgRestorePath := ""
 	remotePsqlPath := ""
 	if stage != nil && stage.Access.IsRemote() {
-		remotePgRestorePath, err = resolveRemoteToolPath(ctx, stage.Access, "pg_restore", logWriter)
+		remotePgRestorePath, err = resolveRemoteToolPath(ctx, stage.Access, logicalToolName(dbType, logicalToolRoleRestore), logWriter)
 		if err != nil {
 			return err
 		}
-		remotePsqlPath, err = resolveRemoteToolPath(ctx, stage.Access, "psql", logWriter)
+		remotePsqlPath, err = resolveRemoteToolPath(ctx, stage.Access, logicalToolName(dbType, logicalToolRoleQuery), logWriter)
 		if err != nil {
 			return err
 		}
@@ -1836,16 +1847,19 @@ func preparePostgresTarget(ctx context.Context, psqlTool *localToolSpec, env map
 	}
 }
 
-func buildPostgresRestorePreviewCommand(targetInstance *commonModels.InsightInstances, options logicalRestoreRunOptions, source logicalRestoreSourcePlan, sourcePath string) string {
+func buildPostgresRestorePreviewCommand(dbType string, targetInstance *commonModels.InsightInstances, options logicalRestoreRunOptions, source logicalRestoreSourcePlan, sourcePath string) string {
+	// 预览里只展示工具名（不展开绝对路径），金仓显示 ksql / sys_restore
+	queryTool := logicalToolName(dbType, logicalToolRoleQuery)
+	restoreTool := logicalToolName(dbType, logicalToolRoleRestore)
 	if strings.EqualFold(source.Format, "plain") || strings.EqualFold(source.Format, "plain.gz") {
-		base := fmt.Sprintf("psql \"host=%s port=%d dbname=%s user=%s\" -v ON_ERROR_STOP=1", targetInstance.Hostname, targetInstance.Port, source.TargetObjectName, targetInstance.User)
+		base := fmt.Sprintf("%s \"host=%s port=%d dbname=%s user=%s\" -v ON_ERROR_STOP=1", queryTool, targetInstance.Hostname, targetInstance.Port, source.TargetObjectName, targetInstance.User)
 		if strings.EqualFold(source.Format, "plain.gz") {
 			return fmt.Sprintf("gzip -dc %s | %s", shellQuote(sourcePath), base)
 		}
 		return fmt.Sprintf("%s -f %s", base, shellQuote(sourcePath))
 	}
 	args := []string{
-		"pg_restore",
+		restoreTool,
 		"-h", targetInstance.Hostname,
 		"-p", fmt.Sprintf("%d", targetInstance.Port),
 		"-U", targetInstance.User,
@@ -1985,8 +1999,9 @@ func buildPostgresRestoreResultSummary(targetInstance *commonModels.InsightInsta
 		validations = append(validations, summary)
 	}
 	return marshalJSONValue(gin.H{
-		"report_type":           "logical_restore",
-		"db_type":               "PostgreSQL",
+		"report_type": "logical_restore",
+		// 用目标实例的真实类型，避免金仓的恢复报告被写成 PostgreSQL
+		"db_type":               strings.TrimSpace(string(targetInstance.DbType)),
 		"restore_mode":          options.RestoreMode,
 		"log_path":              logPath,
 		"backup_set_verified":   resolved.MetadataVerified && resolved.ChecksumVerified,
