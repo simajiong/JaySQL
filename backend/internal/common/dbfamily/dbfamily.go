@@ -102,7 +102,12 @@ func EffectiveFamily(dbType string, extraConfig []byte) string {
 	switch Normalize(dbType) {
 	case "mysql", "tidb", "doris", "mariadb", "polardb", "polardb-mysql", "polardbmysql":
 		return FamilyMySQL
-	case "postgresql", "postgres", "polardb-pg", "polardb-postgresql", "polardbpg":
+	case "postgresql", "postgres", "polardb-pg", "polardb-postgresql", "polardbpg",
+		// Kingbase（金仓 KingbaseES）兼容 PostgreSQL 协议与方言：连接驱动、系统字典
+		// （pg_catalog / information_schema）、SQL 执行与审核规则全部可复用 PG 通道。
+		// 归到 postgres 家族后，DAS 执行器、表元数据、schema 浏览、权限申请等
+		// 所有基于家族判定（IsPostgres）的模块一次性打通，无需逐处加类型枚举。
+		"kingbase", "kingbasees":
 		return FamilyPostgres
 	case "oracle":
 		return FamilyOracle

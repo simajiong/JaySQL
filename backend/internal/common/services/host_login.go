@@ -44,6 +44,7 @@ import (
 var hostLoginSupportedDBTypes = map[string]bool{
 	"mysql":      true,
 	"postgresql": true,
+	"kingbase":   true,
 	"tidb":       true,
 	"doris":      true,
 	"oracle":     true,

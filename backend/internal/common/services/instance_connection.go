@@ -203,8 +203,14 @@ func testConnectionMode(ctx context.Context, mode ProbeMode, dbType string, host
 			report.SSHStatus, report.SSHMessage = probeOptionalSSHForBackup(hostname, cfg)
 		}
 		return report, nil
-	case "postgresql":
-		database := getStringConfig(cfg, "database", "postgres")
+	case "postgresql", "kingbase", "kingbasees":
+		// 金仓 KingbaseES 兼容 PG 协议：DSN、pgx 驱动、select 1 探测、权限体检全部同一套。
+		// 默认库不同（金仓初始化自带 test），因此不能简单复用 getStringConfig 的 postgres 兜底。
+		defaultDB := "postgres"
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(dbType)), "kingbase") {
+			defaultDB = "test"
+		}
+		database := getStringConfig(cfg, "database", defaultDB)
 		sslMode := getStringConfig(cfg, "sslmode", "disable")
 		connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 			url.QueryEscape(user),

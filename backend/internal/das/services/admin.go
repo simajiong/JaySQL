@@ -12,6 +12,7 @@ import (
 	"github.com/simajiong/jaysql/pkg/pagination"
 
 	commonModels "github.com/simajiong/jaysql/internal/common/models"
+	"github.com/simajiong/jaysql/internal/common/tasks"
 	"github.com/simajiong/jaysql/internal/das/dao"
 	"github.com/simajiong/jaysql/internal/das/forms"
 	"github.com/simajiong/jaysql/internal/das/models"
@@ -218,6 +219,9 @@ func (s *AdminGetSchemasListService) Run() (responseData any, total int64, err e
 		SchemaName   string `json:"schema_name"`
 	}
 	var roles []schemaListItem
+	// 读时惰性刷新：授权管理页的库清单同样来自元数据快照，
+	// 新建库后若快照已过期，这里异步补刷一次，下次展开即可见。
+	tasks.EnsureFresh(s.InstanceID)
 	tx := global.App.DB.Table("insight_instance_schemas a").
 		Select("a.instance_id, a.schema, a.parent_path, a.resource_type, a.display_name, a.is_deleted, i.db_type").
 		Joins("join insight_instances i on a.instance_id = i.instance_id").

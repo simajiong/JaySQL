@@ -33,12 +33,15 @@
 import { dbTypeLogo } from '@/utils/dbTypeLogo'
 
 /** 允许在监控模块中新建/筛选的数据源 key（与后端 engineCapabilities.Key 对齐，小写） */
-export const MONITOR_DB_TYPE_WHITELIST = ['mysql', 'postgresql', 'oracle', 'sqlserver', 'tidb']
+// kingbase：后端 engineCapabilities 已注册（Implemented=true），采集复用 PG 采集器，
+// 展示目录 displayLayouts 整目录复用 PostgreSQL，因此可以对外开放。
+export const MONITOR_DB_TYPE_WHITELIST = ['mysql', 'postgresql', 'kingbase', 'oracle', 'sqlserver', 'tidb']
 
 /** 白名单 key → 展示名，仅用于提示文案 */
 const DISPLAY_NAME = {
   mysql: 'MySQL',
   postgresql: 'PostgreSQL',
+  kingbase: 'Kingbase',
   oracle: 'Oracle',
   sqlserver: 'SQL Server',
   tidb: 'TiDB',

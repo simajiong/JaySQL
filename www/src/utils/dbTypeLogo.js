@@ -13,6 +13,7 @@ import pgLogo from '@/assets/logo/postgresql.png'
 import oracleLogo from '@/assets/logo/oracle.png'
 import sqlserverLogo from '@/assets/logo/sqlserver.png'
 import tidbLogo from '@/assets/logo/tidb.png'
+import kingbaseLogo from '@/assets/logo/kingbase.png'
 import oceanbaseLogo from '@/assets/logo/oceanbase.png'
 import clickhouseLogo from '@/assets/logo/clickhouse.svg'
 import mongodbLogo from '@/assets/logo/mongodb.svg'
@@ -25,6 +26,8 @@ const LOGO_BY_DB_TYPE = Object.freeze({
   ORACLE: oracleLogo,
   SQLSERVER: sqlserverLogo,
   TIDB: tidbLogo,
+  // 金仓（Kingbase）：兼容 PostgreSQL 协议，但品牌独立，图标单独收录
+  KINGBASE: kingbaseLogo,
   OCEANBASE: oceanbaseLogo,
   CLICKHOUSE: clickhouseLogo,
   MONGODB: mongodbLogo,
@@ -37,9 +40,11 @@ const LOGO_BY_DB_TYPE = Object.freeze({
  * @returns {string} 图标资源地址；未知类型回落 MySQL 图标，与数据恢复页原有表现保持一致
  */
 export const dbTypeLogo = (dbType) => {
-  const key = String(dbType == null ? '' : dbType)
+  let key = String(dbType == null ? '' : dbType)
     .trim()
     .toUpperCase()
+  // KingbaseES 是金仓的完整产品名，图标与 Kingbase 共用，避免落回 MySQL 图标
+  if (key === 'KINGBASEES') key = 'KINGBASE'
   return LOGO_BY_DB_TYPE[key] || mysqlLogo
 }
 

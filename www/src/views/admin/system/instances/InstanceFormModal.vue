@@ -293,7 +293,7 @@
                     />
                   </a-form-item>
                 </a-col>
-                <a-col v-if="formData.db_type === 'PostgreSQL'" :span="12">
+                <a-col v-if="isPgProtocolType" :span="12">
                   <a-form-item label="SSL 模式" name="sslmode">
                     <a-select v-model:value="formData.sslmode" :options="uiData.postgresSslModes" />
                   </a-form-item>
@@ -461,6 +461,14 @@ const DB_TYPE_CONFIG = {
   PostgreSQL: {
     defaultPort: 5432,
   },
+  /* 金仓 KingbaseES：兼容 PostgreSQL 协议与方言，连接、元数据同步、SQL 工作台全部复用
+     PG 通道（后端 dbfamily 已把它归到 postgres 家族），因此表单侧与 PostgreSQL 同构：
+     同样需要「默认数据库」与「SSL 模式」，同样支持主机 SSH。
+     默认端口 54321 是 KingbaseES V8 的安装默认值（不是 PG 的 5432）；
+     默认库取 test（金仓初始化后自带的示例库），与 system 用户配套。 */
+  Kingbase: {
+    defaultPort: 54321,
+  },
   Oracle: {
     defaultPort: 1521,
   },
@@ -531,13 +539,18 @@ const DEFAULT_SSH_PORT = 22
 // OceanBase 双模式判定：只认 extra_config.oceanbase_mode 的归一化结果，
 // 与后端 dbfamily.OceanBaseMode 同一口径，避免「前端按 A 通道提交、后端按 B 通道连接」。
 const isOceanBase = computed(() => isOceanBaseType(formData.value?.db_type))
+// PG 协议族：PostgreSQL 与金仓 KingbaseES。两者在连接参数（库名/SSL）与表单结构上完全一致，
+// 只有品牌、默认端口与默认库不同。所有「PG 专属字段」的显隐都走这里，避免逐处写类型枚举。
+const isPgProtocolType = computed(() =>
+  ['PostgreSQL', 'Kingbase'].includes(formData.value?.db_type),
+)
 const oceanbaseMode = computed(() => normalizeOceanBaseMode(formData.value?.oceanbase_mode))
 const isOceanBaseOracleMode = computed(() => isOceanBase.value && oceanbaseMode.value === OCEANBASE_ORACLE)
-// 默认数据库：PostgreSQL / SQLServer 用它作为连接库；OceanBase MySQL 模式用它记录租户的默认库（选填，可留空）。
+// 默认数据库：PostgreSQL / Kingbase / SQLServer 用它作为连接库；OceanBase MySQL 模式用它记录租户的默认库（选填，可留空）。
 // OceanBase Oracle 模式与 Oracle 没有「库」的概念，因此不显示该字段。
 const showsDatabaseField = computed(
   () =>
-    formData.value?.db_type === 'PostgreSQL' ||
+    isPgProtocolType.value ||
     formData.value?.db_type === 'SQLServer' ||
     (isOceanBase.value && !isOceanBaseOracleMode.value),
 )
@@ -559,7 +572,7 @@ const showsOptionalSection = computed(() => showsDatabaseField.value || showsSer
 //    且 normalizeInstanceExtraConfig 对应分支必须调用 mergeSSHFieldsIntoExtraConfig，
 //    否则表单填完保存后 ssh_* 会被静默丢弃 —— 入口开了但凭据永远存不下来。
 const showsSSHSection = computed(() =>
-  ['MySQL', 'PostgreSQL', 'TiDB', 'Doris', 'Oracle', 'SQLServer'].includes(formData.value?.db_type),
+  ['MySQL', 'PostgreSQL', 'Kingbase', 'TiDB', 'Doris', 'Oracle', 'SQLServer'].includes(formData.value?.db_type),
 )
 // Windows 高频部署形态（SQL Server 几乎必是，Oracle 也常见）：主机默认没有 SSH 服务，
 // 需要先在主机上安装 OpenSSH Server，SSH 账号是 Windows 系统账号（Administrator 等）而非
@@ -588,6 +601,7 @@ const databaseFieldLabel = computed(() => '默认数据库')
 // OceanBase MySQL 模式的默认库是选填的
 const databaseFieldPlaceholder = computed(() => {
   if (isOceanBase.value) return '选填，例如 oceanbase'
+  if (formData.value?.db_type === 'Kingbase') return '默认 test'
   if (formData.value?.db_type === 'SQLServer') return '默认 master'
   return '默认 postgres'
 })
@@ -812,7 +826,7 @@ const rules = computed(() => ({
   sslmode: [
     {
       validator: (_, value) => {
-        if (formData.value?.db_type !== 'PostgreSQL') return Promise.resolve()
+        if (!isPgProtocolType.value) return Promise.resolve()
         if (!value) return Promise.resolve()
         return Promise.resolve()
       },
@@ -1010,8 +1024,15 @@ const applyTypeDefaults = (newType, oldType) => {
     formData.value.port = nextPort
     syncConnectionAddress()
   }
-  if (newType === 'PostgreSQL') {
-    if (!formData.value.database) formData.value.database = 'postgres'
+  if (newType === 'PostgreSQL' || newType === 'Kingbase') {
+    // 两者的默认库不同：PG 是 postgres，金仓初始化后自带的是 test。
+    // 互切时也要换掉「上一个类型的默认库」——否则 PG → 金仓会残留 postgres，
+    // 连上去直接报「database "postgres" does not exist」。
+    const nextDefaultDB = newType === 'Kingbase' ? 'test' : 'postgres'
+    const prevDefaultDB = oldType === 'Kingbase' ? 'test' : oldType === 'PostgreSQL' ? 'postgres' : ''
+    if (!formData.value.database || formData.value.database === prevDefaultDB) {
+      formData.value.database = nextDefaultDB
+    }
     if (!formData.value.sslmode) formData.value.sslmode = 'disable'
   } else if (newType === 'SQLServer') {
     // SQL Server 登录必须有默认库上下文；默认给 master，用户可改成业务库。
@@ -1019,6 +1040,9 @@ const applyTypeDefaults = (newType, oldType) => {
   } else if (oldType === 'PostgreSQL' && formData.value.database === 'postgres') {
     // 离开 PostgreSQL：清掉自动填入的 postgres，避免它被当成其他类型的默认库提交
     // （例如 OceanBase MySQL 模式的「默认数据库」字段会读到这个残留值）
+    formData.value.database = ''
+  } else if (oldType === 'Kingbase' && formData.value.database === 'test') {
+    // 同理：test 是金仓的默认库，切到别的类型时不能残留
     formData.value.database = ''
   } else if (oldType === 'SQLServer' && formData.value.database === 'master') {
     // 同理：master 只属于 SQLServer，切到别的类型时不能残留。
@@ -1105,9 +1129,13 @@ const buildExtraConfigPayload = () => {
     return cfg
   }
   switch (formData.value?.db_type) {
-    case 'PostgreSQL': {
+    case 'PostgreSQL':
+    case 'Kingbase': {
+      // 两者 extra_config 结构一致（database + sslmode + SSH），后端 normalizeInstanceExtraConfig
+      // 也是同一分支；默认库兜底值不同（PG=postgres，金仓=test）。
+      const defaultDB = formData.value?.db_type === 'Kingbase' ? 'test' : 'postgres'
       const cfg = {
-        database: (formData.value?.database || 'postgres').trim(),
+        database: (formData.value?.database || defaultDB).trim(),
         sslmode: formData.value?.sslmode || 'disable',
       }
       return mergeSSH(cfg)
@@ -1354,7 +1382,7 @@ const handleTestConnection = async () => {
   if (showsDatabaseField.value) {
     fields.push('database')
   }
-  if (formData.value?.db_type === 'PostgreSQL') {
+  if (isPgProtocolType.value) {
     fields.push('sslmode')
   }
   if (showsServiceNameField.value) {

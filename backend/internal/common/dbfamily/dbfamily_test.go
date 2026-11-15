@@ -19,6 +19,10 @@ func TestEffectiveFamily(t *testing.T) {
 		{name: "postgresql", dbType: "PostgreSQL", want: FamilyPostgres},
 		{name: "postgres alias", dbType: "postgres", want: FamilyPostgres},
 		{name: "polar pg", dbType: "polardb-pg", want: FamilyPostgres},
+		// 金仓：兼容 PG 协议，归 postgres 家族（连接/元数据/执行/审核全部复用 PG 通道）
+		{name: "kingbase", dbType: "Kingbase", want: FamilyPostgres},
+		{name: "kingbase lower", dbType: "kingbase", want: FamilyPostgres},
+		{name: "kingbasees", dbType: "KingbaseES", want: FamilyPostgres},
 		{name: "oracle", dbType: "Oracle", want: FamilyOracle},
 		{name: "clickhouse", dbType: "ClickHouse", want: FamilyClickHouse},
 		{name: "sqlserver", dbType: "SQLServer", want: FamilySQLServer},

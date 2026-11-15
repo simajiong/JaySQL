@@ -90,6 +90,10 @@ export const resolveDbFamily = (dbType, extraConfig) => {
     case 'postgresql':
     case 'postgres':
     case 'pg':
+    // Kingbase（金仓）兼容 PostgreSQL 协议与方言，连接/元数据/执行全部复用 PG 通道；
+    // 这里归一到 postgres 家族后，各页面的「PG 家族」判定自动生效，不必逐页加判断。
+    case 'kingbase':
+    case 'kingbasees':
     case 'polar-postgres':
     case 'polardb-pg':
     case 'polardb-postgresql':
@@ -137,6 +141,8 @@ const DB_TYPE_DISPLAY_NAMES = {
   polardbmysql: 'PolarDB MySQL',
   postgresql: 'PostgreSQL',
   postgres: 'PostgreSQL',
+  kingbase: 'Kingbase',
+  kingbasees: 'Kingbase',
   'polardb-pg': 'PolarDB PG',
   'polardb-postgresql': 'PolarDB PG',
   polardbpg: 'PolarDB PG',

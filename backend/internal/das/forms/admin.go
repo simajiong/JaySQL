@@ -11,7 +11,7 @@ type AdminSchemasGrantForm struct {
 type AdminGetInstancesListForm struct {
 	PaginationQ pagination.Pagination
 	ID          uint64 `form:"id"  json:"id" binding:"required"`
-	DbType      string `form:"db_type" json:"db_type" binding:"required,oneof=MySQL Oracle SQLServer TiDB Doris PostgreSQL ClickHouse OceanBase"`
+	DbType      string `form:"db_type" json:"db_type" binding:"required,oneof=MySQL Oracle SQLServer TiDB Doris PostgreSQL Kingbase ClickHouse OceanBase"`
 }
 
 type AdminGetSchemasListForm struct {

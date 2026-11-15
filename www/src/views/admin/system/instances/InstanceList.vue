@@ -301,7 +301,7 @@ import {
 } from '@ant-design/icons-vue'
 import { useThrottleFn } from '@vueuse/core'
 import { Modal, message } from 'ant-design-vue'
-import { computed, createVNode, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, createVNode, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import InstanceBatchImportModal from './InstanceBatchImportModal.vue'
 import InstanceFormModal from './InstanceFormModal.vue'
@@ -626,8 +626,6 @@ const copyToClipboard = async (text, successText) => {
 }
 
 const copyDataSourceId = (record) => copyToClipboard(record?.data_source_id, '已复制数据源 ID')
-
-const copyDataSourceName = (record) => copyToClipboard(record?.remark, '已复制数据源名称')
 
 // 探活失败详情（原状态列 popover 迁入「更多」菜单后，改用 Modal 承载）
 const showStatusDetailModal = (record) => {
@@ -1128,6 +1126,16 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncTableScrollbarWidth)
+})
+
+// 其他页面带 ?search=<实例ID> 跳转进来时（如「数据安全 → 实例」），
+// 本页被 keepAlive 缓存后 onMounted 不会再执行，这里补一次参数同步。
+onActivated(() => {
+  const searchQuery = String(route.query?.search || '').trim()
+  if (!searchQuery || searchQuery === filters.search) return
+  filters.search = searchQuery
+  resetToFirstPage()
+  fetchData()
 })
 
 watch(

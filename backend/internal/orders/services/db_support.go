@@ -4,17 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	orderScopes "github.com/simajiong/jaysql/internal/orders/scopes"
 )
 
 func supportsDeepInspect(dbType string) bool {
-	switch dbType {
-	case "MySQL", "PostgreSQL", "Oracle", "TiDB", "Doris":
-		// TiDB/Doris 复用 MySQL 审核引擎（TiDB parser + MySQL 协议探测，引擎内已有
-		// IsTiDB 版本分支）；Oracle 走专用文本解析引擎，连库规则失败即跳过。
-		return true
-	default:
-		return false
-	}
+	// 白名单统一由 scopes.SupportedOrderDbTypes 提供（列表页、数据源下拉、执行链同一口径）。
+	// TiDB/Doris 复用 MySQL 审核引擎（TiDB parser + MySQL 协议探测，引擎内已有
+	// IsTiDB 版本分支）；Kingbase 复用 PG 引擎；Oracle / SQLServer 走专用文本解析引擎，
+	// 连库规则失败即跳过。
+	return orderScopes.SupportsOrderDbType(dbType)
 }
 
 // isOracleDB 判断是否为 Oracle 数据源（工单目标解析 / 规范引擎分发共用）
@@ -89,11 +88,9 @@ func validateOrderSQLTypeSupport(dbType, sqlType string) error {
 	}
 	// MIXED（DDL + DML 同单）与 DDL/DML 走同一条审批与执行链路，
 	// 唯一的差异在任务分派：每条任务按自己的类型选执行器。
-	// TiDB/Doris 由执行器 MySQL/TiDB Executor 承接（见 orders/api/execute）。
-	switch dbType {
-	case "MySQL", "PostgreSQL", "Oracle", "TiDB", "Doris":
-		return nil
-	default:
+	// 支持范围统一取 scopes.SupportedOrderDbTypes（与列表页、数据源下拉同源）。
+	if !orderScopes.SupportsOrderDbType(dbType) {
 		return fmt.Errorf("当前数据库类型暂不支持工单: %s", dbType)
 	}
+	return nil
 }
