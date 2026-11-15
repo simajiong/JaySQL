@@ -173,7 +173,8 @@ func connectLoadSnapshot(ctx context.Context, row monitorInstanceRow) (snapQueri
 	}
 	engine := resolveEngine(row.DbType)
 	switch engine {
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
+		// 金仓兼容 PG 协议，负载快照的基线采集（pg_stat_database / pg_stat_statements / WAL LSN）同一套 SQL
 		cfg, err := parseExtraConfig(row.ExtraConfig)
 		if err != nil {
 			return nil, err
@@ -320,7 +321,7 @@ func captureLoadSnapshotBaseline(q snapQuerier, engine string) (map[string]any, 
 			baseline["digests"] = digestRows
 		}
 		return baseline, snapStr(variables, "version", ""), nil
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
 		statsRows, err := q.query(pgLoadStatsSQL)
 		if err != nil {
 			return nil, "", fmt.Errorf("pg_stat_database 查询失败：%s", err.Error())
@@ -351,7 +352,7 @@ func captureLoadSnapshotEnd(q snapQuerier, engine string, baseline map[string]an
 	switch engine {
 	case "mysql", "tidb":
 		return mysqlLoadSnapshotEnd(q, baseline, windowSeconds)
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
 		return pgLoadSnapshotEnd(q.(*snapPgQ), baseline, windowSeconds, verNum)
 	}
 	return nil, fmt.Errorf("未知引擎：%s", engine)

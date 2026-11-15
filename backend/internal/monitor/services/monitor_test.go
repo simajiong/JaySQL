@@ -193,7 +193,10 @@ func TestMonitorableEngineKeys(t *testing.T) {
 	if len(keys) != len(engineCapabilities) {
 		t.Fatalf("所有内置引擎都应已实现采集，实际 %d/%d", len(keys), len(engineCapabilities))
 	}
-	expected := map[string]bool{"mysql": true, "postgresql": true, "tidb": true, "doris": true, "clickhouse": true, "sqlserver": true, "oracle": true}
+	// 期望集合是「刻意的白名单」：新增引擎必须同步更新这里，
+	// 避免注册表被顺手加一项就进入监控对象列表（没有采集实现会变成一片空指标）。
+	// kingbase 于 2026-11 接入：采集复用 PG 采集器，展示目录整目录复用 PostgreSQL。
+	expected := map[string]bool{"mysql": true, "postgresql": true, "kingbase": true, "tidb": true, "doris": true, "clickhouse": true, "sqlserver": true, "oracle": true}
 	for _, key := range keys {
 		if !expected[key] {
 			t.Errorf("出现未预期的引擎键 %q", key)
@@ -1583,7 +1586,10 @@ func TestNormalizeDbVersion(t *testing.T) {
 		{"MySQL 纯净版", "8.0.34", "8.0.34"},
 		{"MySQL 带 log 后缀", "8.0.34-log", "8.0.34"},
 		{"MySQL 5.7 带 log", "5.7.44-log", "5.7.44"},
-		{"TiDB 保留引擎标识", "5.7.25-TiDB-v7.5.0", "5.7.25-TiDB"},
+		// TiDB：前导段是 MySQL 兼容版本号，取 -v 尾段的真实版本（不带引擎名，
+		// 展示处会拼 db_type，避免出现「TiDB 8.0.11-TiDB」）
+		{"TiDB 取真实版本", "5.7.25-TiDB-v7.5.0", "7.5.0"},
+		{"TiDB 无 -v 尾段", "8.0.11-TiDB", "8.0.11"},
 		{"PG 带发行后缀", "15.3 (Debian 15.3-1.pgdg110+1)", "15.3"},
 		{"PG version() 全文", "PostgreSQL 15.3 on x86_64-pc-linux-gnu, compiled by gcc", "15.3"},
 		{"Oracle 版本号", "19.0.0.0.0", "19.0.0.0.0"},

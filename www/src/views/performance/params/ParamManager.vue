@@ -253,7 +253,8 @@ const instances = ref([])
 const currentInstanceId = ref('')
 const compareIds = ref([])
 // 参数管理支持的数据库类型（顺序即下拉展示顺序）
-const TYPE_ORDER = ['Oracle', 'MySQL', 'SQLServer', 'PostgreSQL', 'TiDB']
+// Kingbase 走 PG 通道，参数采集/修改复用 collectPostgresParams 一系实现
+const TYPE_ORDER = ['Oracle', 'MySQL', 'SQLServer', 'PostgreSQL', 'Kingbase', 'TiDB']
 const filterType = ref(undefined)
 
 // 类型选项按「当前实例清单里实际存在的 db_type」动态生成：

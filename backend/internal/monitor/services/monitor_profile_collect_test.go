@@ -76,11 +76,21 @@ func TestNormalizeDbVersionDropsNullSentinels(t *testing.T) {
 
 func TestNormalizeDbVersionKeepsRealVersions(t *testing.T) {
 	cases := map[string]string{
-		"19.0.0.0.0":                         "19.0.0.0.0",
-		"8.0.34-log":                         "8.0.34",
-		"5.7.25-TiDB-v7.5.0":                 "5.7.25-TiDB",
+		"19.0.0.0.0": "19.0.0.0.0",
+		"8.0.34-log": "8.0.34",
+		// TiDB：前导段是 MySQL 兼容版本号，必须取 -v 尾段的真实 TiDB 版本，
+		// 否则页面上显示 "TiDB 8.0.11"，用户会误以为是 MySQL 8.0.11。
+		// 版本串不带引擎名 —— 展示处已经拼了 db_type，再带 -TiDB 就成了
+		// 「TiDB 8.0.11-TiDB」。
+		"8.0.11-TiDB-v8.5.1": "8.5.1",
+		"5.7.25-TiDB-v7.5.0": "7.5.0",
+		// 老版本无 -v 尾段："8.0.11-TiDB" 的前导段本身就是 TiDB 版本。
+		"5.7.25-TiDB":                        "5.7.25",
+		"8.0.11-TiDB":                        "8.0.11",
 		"PostgreSQL 15.3 on x86_64-pc-linux": "15.3",
 		"16.15":                              "16.15",
+		// SQL Server：SERVERPROPERTY('ProductVersion') 是四段式数字。
+		"16.0.4165.4": "16.0.4165.4",
 	}
 	for raw, want := range cases {
 		if got := normalizeDbVersion(raw); got != want {

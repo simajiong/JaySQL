@@ -73,33 +73,39 @@ type roleScopedMetric struct {
 //     级联备库（RoleCascade）同样是上游，届时把 cascade 加入 Applicable 即可。
 //   - eng.logical_rep_lag_bytes / eng.repl_slot_lag_bytes：数据来自 pg_replication_slots，
 //     单机没有复制拓扑时不会有槽；从库若无级联订阅也不会有。
+//
+// kingbase 与 postgresql 共用同一份矩阵：金仓兼容 PG 协议，角色探测与
+// 复制视图完全一致（inferPostgresRole 直接复用），适用性没有差异。
 var roleScopedMetrics = map[string][]roleScopedMetric{
-	"postgresql": {
-		{
-			MetricKey:  MetricEngReplayLagSeconds,
-			Applicable: map[string]bool{RoleMaster: true},
-			Note:       "依赖 pg_stat_replication，仅主库视角存在",
-		},
-		{
-			MetricKey:  MetricEngSentLagBytes,
-			Applicable: map[string]bool{RoleMaster: true},
-			Note:       "依赖 pg_stat_replication，仅主库视角存在",
-		},
-		{
-			MetricKey:  MetricEngLogicalRepLagBytes,
-			Applicable: map[string]bool{RoleMaster: true},
-			Note:       "依赖 pg_replication_slots(logical)，单机无复制槽时不存在",
-		},
-		{
-			MetricKey:  MetricEngReplSlotLag,
-			Applicable: map[string]bool{RoleMaster: true},
-			Note:       "依赖 pg_replication_slots，单机无复制槽时不存在",
-		},
-		{
-			MetricKey:  MetricReplLagSeconds,
-			Applicable: map[string]bool{RoleSlave: true, RoleCascade: true},
-			Note:       "pg_last_xact_replay_timestamp 仅在备库（含级联备库）上有值，主库/单机无数据",
-		},
+	"postgresql": postgresRoleScopedMetrics,
+	"kingbase":   postgresRoleScopedMetrics,
+}
+
+var postgresRoleScopedMetrics = []roleScopedMetric{
+	{
+		MetricKey:  MetricEngReplayLagSeconds,
+		Applicable: map[string]bool{RoleMaster: true},
+		Note:       "依赖 pg_stat_replication，仅主库视角存在",
+	},
+	{
+		MetricKey:  MetricEngSentLagBytes,
+		Applicable: map[string]bool{RoleMaster: true},
+		Note:       "依赖 pg_stat_replication，仅主库视角存在",
+	},
+	{
+		MetricKey:  MetricEngLogicalRepLagBytes,
+		Applicable: map[string]bool{RoleMaster: true},
+		Note:       "依赖 pg_replication_slots(logical)，单机无复制槽时不存在",
+	},
+	{
+		MetricKey:  MetricEngReplSlotLag,
+		Applicable: map[string]bool{RoleMaster: true},
+		Note:       "依赖 pg_replication_slots，单机无复制槽时不存在",
+	},
+	{
+		MetricKey:  MetricReplLagSeconds,
+		Applicable: map[string]bool{RoleSlave: true, RoleCascade: true},
+		Note:       "pg_last_xact_replay_timestamp 仅在备库（含级联备库）上有值，主库/单机无数据",
 	},
 }
 

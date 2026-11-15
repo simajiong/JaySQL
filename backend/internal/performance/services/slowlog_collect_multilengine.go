@@ -121,16 +121,12 @@ func queryPostgresCurrentLogFile(instance *commonModels.InsightInstances) string
 	ctx, cancel := context.WithTimeout(context.Background(), pgLogPathQueryTimeout)
 	defer cancel()
 
-	database := strings.TrimSpace(instance.OrganizationKey)
-	if database == "" {
-		database = "postgres"
-	}
 	db := dao.PostgresDB{
 		User:     user,
 		Password: password,
 		Host:     strings.TrimSpace(instance.Hostname),
 		Port:     instance.Port,
-		Database: database,
+		Database: pgConnectDatabase(instance),
 		Ctx:      ctx,
 	}
 	_, rows, err := db.Query(`SELECT pg_current_logfile() AS current_logfile,

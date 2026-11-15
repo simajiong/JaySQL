@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/simajiong/jaysql/internal/common/tasks"
 	"github.com/simajiong/jaysql/internal/das/forms"
 	"github.com/simajiong/jaysql/internal/global"
 	"github.com/simajiong/jaysql/pkg/secret"
@@ -248,6 +249,9 @@ func (s *GetResourcesService) Run() ([]resourceListResult, error) {
 		return nil, err
 	}
 	instanceUUID := strings.TrimSpace(s.InstanceID)
+	// 读时惰性刷新：资源树是「新建库后最容易发现看不到」的入口，
+	// 快照过期时在这里异步补刷（不阻塞本次请求，只影响下一次展开）。
+	tasks.EnsureFresh(instanceUUID)
 	instanceGranted, err := hasDASInstanceGrant(scope, instanceUUID)
 	if err != nil {
 		return nil, err

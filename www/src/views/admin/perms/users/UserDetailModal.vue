@@ -172,6 +172,7 @@ const MODULE_LABEL_MAP = {
   monitor: '监控告警',
   performance: '性能分析',
   audit: '审计日志',
+  datasec: '数据安全',
   system: '系统管理',
 }
 
@@ -221,7 +222,7 @@ const SUB_LABEL_MAP = {
   'system.main': '系统管理',
 }
 
-const DISPLAY_ORDER = ['sql_order', 'datasource', 'backup', 'monitor', 'performance', 'audit', 'system']
+const DISPLAY_ORDER = ['sql_order', 'datasource', 'backup', 'monitor', 'performance', 'audit', 'datasec', 'system']
 const moduleOrder = DISPLAY_ORDER
 const ALL_ACTION_KEYS = new Set(Object.keys(ACTION_LABEL_MAP))
 

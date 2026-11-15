@@ -240,6 +240,7 @@ const MODULE_LABEL_MAP = {
   monitor: '监控告警',
   performance: '性能分析',
   audit: '审计日志',
+  datasec: '数据安全',
   system: '系统管理',
 }
 
@@ -275,6 +276,8 @@ const SUB_LABEL_MAP = {
   'datasource.instance': '数据源',
   'datasource.param': '参数管理',
   'datasource.compare': '多实例对比',
+  'datasec.rule': '脱敏规则',
+  'datasec.plain': '明文工单',
   'audit.log': '审计日志',
   'audit.policy': '审计策略',
   'audit.main': '审计日志',
@@ -290,8 +293,8 @@ const SUB_LABEL_MAP = {
   'system.main': '系统管理',
 }
 
-// Tab 顺序与侧栏菜单一致：SQL 工作台 → 数据源管理 → 备份恢复 → 监控告警 → 性能分析 → 审计日志 → 系统管理
-const DISPLAY_ORDER = ['sql_order', 'datasource', 'backup', 'monitor', 'performance', 'audit', 'system']
+// Tab 顺序与侧栏菜单一致：SQL 工作台 → 数据源管理 → 备份恢复 → 监控告警 → 性能分析 → 审计日志 → 数据安全 → 系统管理
+const DISPLAY_ORDER = ['sql_order', 'datasource', 'backup', 'monitor', 'performance', 'audit', 'datasec', 'system']
 const moduleOrder = DISPLAY_ORDER
 
 const statusOptions = [

@@ -34,6 +34,8 @@ var builtinRoleDefinitions = []BuiltinRoleDefinition{
 			// （尊重管理员在 UI 上对 member 权限集的调整，也符合「存量不补授权」的数据兼容口径）。
 			"datasource.instance.view",
 			"datasource.param.view",
+			// 数据安全（脱敏）：普通成员默认可发起明文申请（审批需要另授）
+			"datasec.plain.request",
 		},
 	},
 	{
@@ -105,6 +107,11 @@ var builtinRoleDefinitions = []BuiltinRoleDefinition{
 			"system.announcement.manage",
 			"system.hotarticle.view",
 			"system.hotarticle.manage",
+			// 数据安全（脱敏）：管理员全量
+			"datasec.rule.view",
+			"datasec.rule.manage",
+			"datasec.plain.request",
+			"datasec.plain.approve",
 		},
 		IsSuperuser: true,
 	},
@@ -141,6 +148,8 @@ var builtinRoleDefinitions = []BuiltinRoleDefinition{
 			"system.feedback.view",
 			"system.announcement.view",
 			"system.hotarticle.view",
+			// 数据安全（脱敏）：只读账号可看配置，不可改、不可审批
+			"datasec.rule.view",
 		},
 	},
 }

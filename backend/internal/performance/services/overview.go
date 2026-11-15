@@ -323,6 +323,9 @@ func buildPerformanceDashboard(supported []instanceOptionRow, rangeDays int) ove
 			dash.kpis.MysqlInstances++
 		case "PostgreSQL":
 			dash.kpis.PgInstances++
+		case "Kingbase":
+			// 金仓走 PG 通道，性能总览归入 PG 实例计数（指标口径与 PG 相同）
+			dash.kpis.PgInstances++
 		}
 	}
 	if len(supported) == 0 {

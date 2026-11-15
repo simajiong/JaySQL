@@ -13,6 +13,7 @@
           <a-select v-model:value="filters.dbType" class="toolbar-select" allow-clear placeholder="全部类型">
             <a-select-option value="MySQL">MySQL</a-select-option>
             <a-select-option value="PostgreSQL">PostgreSQL</a-select-option>
+            <a-select-option value="Kingbase">Kingbase</a-select-option>
           </a-select>
           <a-select v-model:value="filters.environment" class="toolbar-select" allow-clear placeholder="全部环境">
             <a-select-option v-for="env in environmentOptions" :key="env" :value="env">{{ env }}</a-select-option>

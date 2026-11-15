@@ -803,6 +803,15 @@ var displayLayouts = map[string]displayLayoutDef{
 		},
 		Items: postgresqlDisplayItems,
 	},
+	// 金仓 KingbaseES：兼容 PG 协议，pg_stat_* 指标 key 与 PostgreSQL 完全一致，
+	// 展示目录整目录复用（指标 key 相同才能让模板、告警、明细页三处对齐）。
+	"kingbase": {
+		Tabs: []DisplayTab{
+			{Key: LayerHost, Label: "基础指标"},
+			{Key: LayerEngine, Label: "数据库指标"},
+		},
+		Items: postgresqlDisplayItems,
+	},
 	// Oracle：基础指标（推荐告警集的 res.*，不受模板门控）+ 数据库指标（v$ / dba_* 直连）
 	"oracle": {
 		Tabs: []DisplayTab{

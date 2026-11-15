@@ -1,4 +1,5 @@
-export const SUPPORTED_DB_TYPES = ['MySQL', 'PostgreSQL']
+// Kingbase 走 PG 通道（慢日志采集、参数管理均复用 PG 实现）
+export const SUPPORTED_DB_TYPES = ['MySQL', 'PostgreSQL', 'Kingbase']
 
 export const formatNumber = (value) => {
   const num = Number(value || 0)

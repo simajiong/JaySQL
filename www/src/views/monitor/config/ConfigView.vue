@@ -896,14 +896,17 @@ const engineSourceOptions = [
 // 可选项来自内置指标清单接口（engine 过滤），默认用前后端同口径的层级前缀排除主机层 ——
 // 主机层指标与数据库类型无关，不进模板，也就不该出现在勾选列表里制造误解。
 //
-// 例外：MySQL / PostgreSQL / Oracle / SQLServer / TiDB 的监控明细「基础指标」页展示了主机层指标
+// 例外：MySQL / PostgreSQL / 金仓 / Oracle / SQLServer / TiDB 的监控明细「基础指标」页展示了主机层指标
 // （CPU / 内存 / 磁盘 / IOPS / Swap / 网络错误 / 文件句柄 / 时钟偏移），
 // 默认模板已按展示目录同步，因此这些类型必须能勾选主机层，否则已勾选状态无法回显。
 // 口径与后端 services.hostMetricsInTemplate 保持一致（改一处必须同步另一处）。
+// 金仓（KingbaseES）展示目录整目录复用 PostgreSQL，host 层指标同样在「基础指标」Tab 里，
+// 漏掉它会让用户新建金仓模板时看不到主机层 → 模板里没有 res.* →
+// 明细页「基础指标」Tab 被模板门控整页剪掉，只剩「数据库指标」（2026-11-11 修复）。
 // 注意：这里判断的是「主机层能否进模板」，与 monitorDbTypes.js 的对外开放白名单
 // 是两件事 —— 前者跟随后端能力，后者只是前端入口收窄，不要互相复用。
 // ---------------------------------------------------------------------------
-const TEMPLATE_HOST_DB_TYPES = ['mysql', 'postgresql', 'oracle', 'sqlserver', 'tidb']
+const TEMPLATE_HOST_DB_TYPES = ['mysql', 'postgresql', 'kingbase', 'oracle', 'sqlserver', 'tidb']
 const templateHostAllowed = computed(() => {
   const dbType = String(templateModal.form.db_type || '').toLowerCase()
   return TEMPLATE_HOST_DB_TYPES.includes(dbType)
@@ -1396,8 +1399,10 @@ const reloadTemplates = async () => {
  *  勾选清单若回落到字典口径，主机层会被 collectScopeEnabled 过滤掉，
  *  模板里已勾选的主机指标就无处回显。
  *  SQL Server 同上：它有自己的展示目录（基础指标 + 数据库指标两个 Tab），
- *  且默认模板按展示目录播种，必须走 layout=1 才能与明细页逐行对账。 */
-const LAYOUT_ENGINE_PICKER = ['mysql', 'postgresql', 'oracle', 'sqlserver', 'tidb', 'doris']
+ *  且默认模板按展示目录播种，必须走 layout=1 才能与明细页逐行对账。
+ *  金仓同理：展示目录整目录复用 PostgreSQL（两个 Tab，含主机层），必须走 layout=1，
+ *  否则勾选清单回落到字典口径时主机层被过滤，模板里永远勾不到 res.*。 */
+const LAYOUT_ENGINE_PICKER = ['mysql', 'postgresql', 'kingbase', 'oracle', 'sqlserver', 'tidb', 'doris']
 
 const reloadTemplatePicker = async (engineKey) => {
   if (!engineKey) {

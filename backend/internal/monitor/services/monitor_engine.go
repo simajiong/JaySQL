@@ -94,7 +94,8 @@ func collectEngineSamples(ctx context.Context, row monitorInstanceRow, keys []st
 	switch resolveEngine(row.DbType) {
 	case "mysql", "tidb", "doris":
 		return collectMySQLSamples(ctx, row, keys)
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
+		// 金仓兼容 PG 协议，pg_stat_* 系列视图同名同义，直接复用 PG 采集器
 		return collectPostgresSamples(ctx, row, keys)
 	case "clickhouse":
 		return collectClickHouseSamples(ctx, row, keys)

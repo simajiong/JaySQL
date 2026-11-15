@@ -16,7 +16,7 @@ import (
 // 口径与 slowLogEngineSupported 保持一致：凡是 dbfamily.EffectiveFamily 落到
 // mysql / postgresql / oracle 三族的都算支持。之所以两份并存，是因为这里要
 // 直接拼进 SQL 的 IN 列表，而 effective family 判定是 Go 侧逻辑。
-var supportedDBTypes = []string{"MySQL", "PostgreSQL", "Oracle"}
+var supportedDBTypes = []string{"MySQL", "PostgreSQL", "Kingbase", "Oracle"}
 
 type instanceOptionRow struct {
 	InstanceID       string `json:"instance_id"`

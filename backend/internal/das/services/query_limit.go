@@ -35,7 +35,9 @@ func applyQueryLimit(dbType string, sqlText string) (string, error) {
 	maxLimit := int(limitpolicy.MaxReturnRows)
 
 	switch strings.ToLower(dbType) {
-	case "mysql", "tidb", "doris", "postgresql", "clickhouse":
+	// "kingbase" 与 postgresql 同为 LIMIT 语法，走同一条注入/封顶路径；
+	// 漏掉它会落到 default 分支（原样放行），大表查询会一次性返回全部行。
+	case "mysql", "tidb", "doris", "postgresql", "kingbase", "kingbasees", "clickhouse":
 		if strings.EqualFold(dbType, "mysql") || strings.EqualFold(dbType, "tidb") || strings.EqualFold(dbType, "doris") || strings.EqualFold(dbType, "clickhouse") {
 			return strings.TrimRight(body, " \t\r\n") + tail, nil
 		}

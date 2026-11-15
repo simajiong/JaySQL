@@ -551,16 +551,12 @@ FROM pg_settings ORDER BY name`
 func collectPostgresParams(instance *commonModels.InsightInstances, timeout time.Duration) ([]ParamEntry, error) {
 	ctx, cancel := paramQueryContext(timeout)
 	defer cancel()
-	database := strings.TrimSpace(instance.OrganizationKey)
-	if database == "" {
-		database = "postgres"
-	}
 	db := dao.PostgresDB{
 		User:     instance.User,
 		Password: instancePlainPassword(instance),
 		Host:     strings.TrimSpace(instance.Hostname),
 		Port:     instance.Port,
-		Database: database,
+		Database: pgConnectDatabase(instance),
 		Ctx:      ctx,
 	}
 	_, rows, err := db.Query(paramPgSettingsQuery)
@@ -845,14 +841,10 @@ func mysqlMajorVersion(db dao.DB) (int, error) {
 func modifyPostgresParam(instance *commonModels.InsightInstances, entry *ParamEntry, newValue string) (string, string, error) {
 	ctx, cancel := paramQueryContext(paramQueryTimeout)
 	defer cancel()
-	database := strings.TrimSpace(instance.OrganizationKey)
-	if database == "" {
-		database = "postgres"
-	}
 	db := dao.PostgresDB{
 		User: instance.User, Password: instancePlainPassword(instance),
 		Host: strings.TrimSpace(instance.Hostname), Port: instance.Port,
-		Database: database, Ctx: ctx,
+		Database: pgConnectDatabase(instance), Ctx: ctx,
 	}
 	escaped := strings.ReplaceAll(newValue, "'", "''")
 	if err := db.Execute(fmt.Sprintf("ALTER SYSTEM SET %s = '%s'", entry.Name, escaped)); err != nil {
@@ -944,12 +936,9 @@ func verifyParamValue(instance *commonModels.InsightInstances, paramName string)
 		}
 		return pgText((*rows)[0], "Value"), nil
 	case dbfamily.FamilyPostgres:
-		database := strings.TrimSpace(instance.OrganizationKey)
-		if database == "" {
-			database = "postgres"
-		}
 		db := dao.PostgresDB{User: instance.User, Password: instancePlainPassword(instance),
-			Host: strings.TrimSpace(instance.Hostname), Port: instance.Port, Database: database, Ctx: ctx}
+			Host: strings.TrimSpace(instance.Hostname), Port: instance.Port,
+			Database: pgConnectDatabase(instance), Ctx: ctx}
 		_, rows, err := db.Query("SELECT COALESCE(setting,'') AS setting, COALESCE(unit,'') AS unit FROM pg_settings WHERE name='" +
 			strings.ReplaceAll(paramName, "'", "''") + "'")
 		if err != nil || len(*rows) == 0 {

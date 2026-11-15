@@ -25,6 +25,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"strconv"
@@ -33,6 +34,7 @@ import (
 	"time"
 
 	commonModels "github.com/simajiong/jaysql/internal/common/models"
+	"github.com/simajiong/jaysql/internal/common/sqlserverdsn"
 	"github.com/simajiong/jaysql/internal/das/dao"
 	"github.com/simajiong/jaysql/internal/global"
 	"github.com/simajiong/jaysql/pkg/secret"
@@ -264,14 +266,19 @@ func collectEngineProfileFacts(ctx context.Context, row monitorInstanceRow) prof
 	switch resolveEngine(row.DbType) {
 	case "mysql", "tidb", "doris", "mariadb":
 		facts.DbVersion, facts.InstanceRole, facts.UptimeSeconds = collectMySQLProfileFacts(ctx, row, password)
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
 		facts.DbVersion, facts.InstanceRole, facts.UptimeSeconds = collectPostgresProfileFacts(ctx, row, password)
 	case "clickhouse":
 		facts.DbVersion, facts.UptimeSeconds = collectClickHouseProfileFacts(ctx, row, password)
 	case "oracle":
 		facts.DbVersion, facts.InstanceRole, facts.UptimeSeconds = collectOracleProfileFacts(ctx, row, password)
+	case "sqlserver":
+		// 2026-11-11 补齐：此前 SQL Server 落在 default 分支不回写，
+		// 数据源总览的 SQLServer 实例永远没有版本号，且 engineSatisfied
+		// 永不满足导致每 30 秒空转重试。
+		facts.DbVersion, facts.InstanceRole, facts.UptimeSeconds = collectSQLServerProfileFacts(ctx, row, password)
 	default:
-		// SQL Server / MongoDB 等暂不回写：保持 available=false + reason，
+		// MongoDB 等暂不回写：保持 available=false + reason，
 		// 而不是写入一个"看起来有值"的猜测。
 	}
 	return facts
@@ -539,6 +546,41 @@ func oracleProfileValue(item map[string]any, name string) any {
 	return nil
 }
 
+// collectSQLServerProfileFacts SQL Server 画像事实。
+//   - 版本：SERVERPROPERTY('ProductVersion')，任意登录可查，无需 VIEW SERVER STATE；
+//   - 运行时长：sys.dm_os_sys_info.sqlserver_start_time，无权限时失败可容忍；
+//   - 角色：AlwaysOn 可用组拓扑探测复杂，不猜 —— 返回空串保持原值。
+//
+// 连接方式与 collectSQLServerSamples 一致（sqlserverdsn 统一处理老版本 TLS 握手）。
+func collectSQLServerProfileFacts(ctx context.Context, row monitorInstanceRow, password string) (string, string, int64) {
+	cfg, err := parseExtraConfig(row.ExtraConfig)
+	if err != nil {
+		logProfileSkip(row, "SQLServer", "扩展参数解析失败", err)
+		return "", "", 0
+	}
+	dsn := sqlserverdsn.DSN(row.User, password, row.Hostname, row.Port, getStringConfig(cfg, "database", "master"))
+	db, err := sql.Open("sqlserver", dsn)
+	if err != nil {
+		logProfileSkip(row, "SQLServer", "连接串构建失败", err)
+		return "", "", 0
+	}
+	defer db.Close()
+
+	var version string
+	if err := db.QueryRowContext(ctx,
+		`SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)) AS db_version`).Scan(&version); err != nil {
+		logProfileSkip(row, "SQLServer", "查询版本失败", err)
+		return "", "", 0
+	}
+
+	var uptime int64
+	_ = db.QueryRowContext(ctx,
+		`SELECT CAST(DATEDIFF(second, sqlserver_start_time, GETDATE()) AS bigint) AS uptime_seconds
+		 FROM sys.dm_os_sys_info`).Scan(&uptime)
+
+	return normalizeDbVersion(version), "", uptime
+}
+
 // logProfileSkip 记录引擎侧画像采集的跳过原因。
 // 采集失败原本完全静默，导致「版本一直是空」只能在库里反复推断 ——
 // 这里补上可观测性：只打实例标识与原因，绝不打密码。
@@ -556,10 +598,14 @@ func logProfileSkip(row monitorInstanceRow, engine, reason string, err error) {
 }
 
 // normalizeDbVersion 把各引擎五花八门的版本串归一化成可展示的短版本。
-//   - MySQL  "8.0.34-log"        → "8.0.34"
-//   - TiDB   "5.7.25-TiDB-v7.5.0" → "5.7.25-TiDB"（保留 TiDB 标识，否则看不出引擎）
-//   - PG     "15.3 (Debian ...)" → "15.3"
+//   - MySQL  "8.0.34-log"              → "8.0.34"
+//   - TiDB   "8.0.11-TiDB-v8.5.1"      → "8.5.1"（取 -v 尾段的真实 TiDB 版本，
+//     前导段只是 MySQL 兼容版本号，展示它会让用户误以为是 MySQL 8.0.11）
+//   - PG     "15.3 (Debian ...)"       → "15.3"
 //   - PG     "PostgreSQL 15.3 on x86_64..." → "15.3"
+//
+// 版本串只保留版本号本身，不带引擎名：展示处一律拼「db_type + 空格 + db_version」，
+// 再拼一次 "-TiDB" 就会出现「TiDB 8.0.11-TiDB」这种重复。
 //
 // 取不到前导版本号时原样截断返回，不要返回空串把"有值"变成"没值"。
 func normalizeDbVersion(raw string) string {
@@ -579,18 +625,31 @@ func normalizeDbVersion(raw string) string {
 	if strings.EqualFold(head, "PostgreSQL") && len(fields) > 1 {
 		head = fields[1]
 	}
-	end := 0
-	for end < len(head) && (head[end] == '.' || (head[end] >= '0' && head[end] <= '9')) {
-		end++
-	}
-	if end == 0 {
+	base := leadingNumeric(head)
+	if base == "" {
 		return truncateText(text, 64)
 	}
-	base := strings.TrimRight(head[:end], ".")
 	if strings.Contains(strings.ToLower(text), "tidb") {
-		base += "-TiDB"
+		// TiDB 的 VERSION() 形如 "8.0.11-TiDB-v8.5.1"：前导段是 MySQL 兼容版本，
+		// 用户真正关心的 TiDB 版本在 "-v" 尾段，取尾段展示（如 "8.5.1"）。
+		// 尾段解析不出（老版本无 -v 后缀，如 "8.0.11-TiDB"）说明前导段本身就是
+		// TiDB 版本，直接用前导段，绝不返回空串。
+		if idx := strings.LastIndex(strings.ToLower(text), "-tidb-v"); idx >= 0 {
+			if tail := leadingNumeric(text[idx+len("-tidb-v"):]); tail != "" {
+				base = tail
+			}
+		}
 	}
 	return truncateText(base, 64)
+}
+
+// leadingNumeric 取字符串前导的数字/点段（"8.5.1-rel" → "8.5.1"，"x.y" → ""）。
+func leadingNumeric(s string) string {
+	end := 0
+	for end < len(s) && (s[end] == '.' || (s[end] >= '0' && s[end] <= '9')) {
+		end++
+	}
+	return strings.TrimRight(s[:end], ".")
 }
 
 // ---------------------------------------------------------------------------

@@ -95,11 +95,8 @@ func probePostgresSlowLogCapability(instance *commonModels.InsightInstances) *sl
 		Password: password,
 		Host:     strings.TrimSpace(instance.Hostname),
 		Port:     instance.Port,
-		Database: strings.TrimSpace(instance.OrganizationKey),
+		Database: pgConnectDatabase(instance),
 		Ctx:      ctx,
-	}
-	if db.Database == "" {
-		db.Database = "postgres"
 	}
 
 	_, rows, err := db.Query(pgSettingsQuery)

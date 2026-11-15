@@ -2602,6 +2602,8 @@ const formatDbTypeLabel = (value) => {
     case 'postgresql':
     case 'postgres':
       return 'PostgreSQL'
+    case 'kingbase':
+      return 'Kingbase'
     case 'sqlserver':
       return 'SQL Server'
     case 'oracle':

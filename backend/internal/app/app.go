@@ -21,6 +21,7 @@ import (
 	brandRouter "github.com/simajiong/jaysql/internal/brand/routers"
 	commonRouter "github.com/simajiong/jaysql/internal/common/routers"
 	dasRouter "github.com/simajiong/jaysql/internal/das/routers"
+	datasecRouter "github.com/simajiong/jaysql/internal/datasec/routers"
 	feedbackRouter "github.com/simajiong/jaysql/internal/feedback/routers"
 	hotArticleRouter "github.com/simajiong/jaysql/internal/hotarticle/routers"
 	inspectRouter "github.com/simajiong/jaysql/internal/inspect/routers"
@@ -127,6 +128,7 @@ func RunServer() {
 		performanceRouter.Routers,
 		inspectRouter.Routers,
 		dasRouter.Routers,
+		datasecRouter.Routers,
 		ordersRouter.Routers,
 		backupRouter.Routers,
 		aiRouter.Routers,

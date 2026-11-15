@@ -285,6 +285,8 @@ const dbTypeOptions = [
   { value: 'Doris', label: 'Doris' },
   { value: 'OceanBase', label: 'OceanBase' },
   { value: 'PostgreSQL', label: 'PostgreSQL' },
+  // 金仓：PG 协议，库/schema 两级与 PG 同口径（后端 dbfamily 已归到 postgres 家族）
+  { value: 'Kingbase', label: 'Kingbase' },
   { value: 'Oracle', label: 'Oracle' },
 ]
 
@@ -592,7 +594,7 @@ const fetchCurrentGrants = async () => {
 }
 
 const isResourceGrant = computed(() => formState.grant_scope === 'resource_tables_readonly')
-const isPostgresFamily = computed(() => ['PostgreSQL', 'SQLServer'].includes(formState.db_type))
+const isPostgresFamily = computed(() => ['PostgreSQL', 'Kingbase', 'SQLServer'].includes(formState.db_type))
 const needsDatabaseLayer = computed(() => isPostgresFamily.value)
 const primaryResourceType = computed(() => (formState.db_type === 'Oracle' ? 'schema' : 'database'))
 const principalLabel = computed(() => (formState.principal_type === 'role' ? '角色' : '用户'))

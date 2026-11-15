@@ -36,14 +36,23 @@ import {
   resolveDbFamily,
 } from '../../utils/dbFamily'
 import { extractAliasScope } from '../../utils/sqlAliasParser'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 const emit = defineEmits(['state-change'])
 
 /* refs */
 const wrapper = ref(null)
 const editor = ref(null)
-const editorView = ref(null)
+/* 必须 shallowRef：EditorView 实例 toRawType() 是 'Object'，ref() 会把它塞进
+   reactive() 变成 Proxy。之后 editorView.value.dispatch() 的 this 就是 Proxy，
+   CodeMirror 内部按对象身份查 ViewPlugin（view.plugin(spec) → pluginMap.get(spec)）
+   时，Vue 会对 Map 的值做 toReactive 包装，导致 PluginInstance.plugin != spec，
+   重新 find 也因元素被包装而落空，最终把 null 写进原始 pluginMap 并永久缓存
+   （pluginMap.clear() 只在 viewPlugin facet 变化时才执行）。
+   后果：所有 ViewPlugin 型 decorations 静默丢失 —— 语法高亮、当前行高亮、
+   括号匹配全没了，但静态装饰和 Layer（drawSelection）正常，极难排查。
+   DOM 节点不受影响（toRawType 是 'HTMLDivElement'，不参与 reactive）。 */
+const editorView = shallowRef(null)
 let resizeObserver = null
 let nativeCopyBridgeTimer = null
 let nativeCopyBridgeTextarea = null

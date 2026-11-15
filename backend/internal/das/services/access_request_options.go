@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/simajiong/jaysql/internal/common/tasks"
 	"github.com/simajiong/jaysql/internal/das/dao"
 	"github.com/simajiong/jaysql/internal/das/forms"
 	"github.com/simajiong/jaysql/internal/global"
@@ -83,6 +84,9 @@ type ListAccessSchemaOptionsService struct {
 }
 
 func (s *ListAccessSchemaOptionsService) Run() ([]accessSchemaOption, error) {
+	// 读时惰性刷新：申请页选择的库来自元数据快照，快照过期时异步补刷一次。
+	// 本次请求仍返回现有快照 —— 申请入口绝不能因为一次远端连接慢而卡住。
+	tasks.EnsureFresh(s.InstanceID)
 	rows := []accessSchemaOption{}
 	err := global.App.DB.Table("insight_instance_schemas").
 		Select("instance_id, `schema`, ifnull(display_name,'') as display_name, ifnull(resource_type,'') as resource_type, ifnull(parent_path,'') as parent_path").

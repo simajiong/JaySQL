@@ -119,7 +119,7 @@ func templateApplicableMetricsWithHost(engine string) []MetricDescriptor {
 // 其余类型（ClickHouse）没有主机层展示，同样不纳入。
 func hostMetricsInTemplate(engine string) bool {
 	switch resolveEngine(engine) {
-	case "mysql", "postgresql", "oracle", "sqlserver", "tidb":
+	case "mysql", "postgresql", "kingbase", "oracle", "sqlserver", "tidb":
 		return true
 	default:
 		return false

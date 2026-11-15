@@ -267,8 +267,11 @@
                 @click="activeLayer = tab.key"
               >
                 {{ tab.label }}
-                <!-- 监控项数量徽标：跟随该 Tab 当前实际展示的卡片数（「仅看异常」筛选时同步变化） -->
-                <span class="tab-count">{{ orderedOf(tab.key).length }}</span>
+                <!-- 指标项数量徽标：按「指标项」计数而非「卡片/图表」计数 ——
+                     一张卡片可能承载多条曲线（如「每秒事务数」= xact_commit + deadlocks +
+                     xact_rollback + tps），徽标要反映用户真正看到的指标个数；
+                     口径 = 该 Tab 当前可见卡片的 series 条数之和，「仅看异常」筛选时同步变化 -->
+                <span class="tab-count">{{ metricCountOf(tab.key) }}</span>
               </button>
             </div>
             <!-- 行尾操作区：全屏 + 仅看异常 + 时间范围，与 Tab 右端对齐 -->
@@ -1298,6 +1301,25 @@ const orderedByLayer = computed(() => {
 
 function orderedOf(layer) {
   return orderedByLayer.value[layer] || []
+}
+
+// Tab 徽标口径：指标项数 = 该层可见卡片承载的曲线（series）条数之和。
+// 不直接用卡片数，是因为一个监控项可能按多指标并行采集（「网络流量」两条、
+// 「每秒事务数」四条），展示给用户的应该是可读的数据项数量。
+// 与 orderedOf 同源（都基于 filteredCards），「仅看异常」过滤后两处一起收敛。
+const metricCountByLayer = computed(() => {
+  const result = {}
+  tabs.value.forEach((tab) => {
+    result[tab.key] = (orderedByLayer.value[tab.key] || []).reduce(
+      (sum, card) => sum + (card.series?.length || 0),
+      0
+    )
+  })
+  return result
+})
+
+function metricCountOf(layer) {
+  return metricCountByLayer.value[layer] || 0
 }
 
 function isCustomSorted(layer) {

@@ -138,6 +138,23 @@ func instancePlainPassword(instance *commonModels.InsightInstances) string {
 	return strings.TrimSpace(plain)
 }
 
+// pgConnectDatabase PG 系（PostgreSQL / Kingbase）连接库名。
+//
+// 唯一权威是 extra_config.database —— 与 SQL 工作台、监控指标、画像采集同源。
+// 2026-11-11 修复：此前误用 organization_key（"搜索路径"字段，正常为空），
+// 回退到 "postgres" 后，金仓这类没有 postgres 库的发行版（KES 默认 test）
+// 全部连不上 —— 慢日志探测、参数管理、日志路径查询全部失效。
+// organization_key 保留为第二优先级兼容历史录入，最后才回退 postgres。
+func pgConnectDatabase(instance *commonModels.InsightInstances) string {
+	if db, ok := stringFromExtraConfig(instance.ExtraConfig, "database"); ok {
+		return db
+	}
+	if org := strings.TrimSpace(instance.OrganizationKey); org != "" {
+		return org
+	}
+	return "postgres"
+}
+
 // stringFromExtraConfig 从 extra_config JSON 里取字符串配置。
 func stringFromExtraConfig(extra datatypes.JSON, key string) (string, bool) {
 	if len(extra) == 0 {

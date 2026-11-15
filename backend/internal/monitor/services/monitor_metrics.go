@@ -376,7 +376,10 @@ func layerLabel(layer string) string {
 // engineScopeMySQL 等常量用于字典的 engine_scope 白名单
 const (
 	engineScopeMySQLGroup = "MySQL,TiDB,Doris"
-	engineScopePostgreSQL = "PostgreSQL"
+	// 金仓复用 PG 采集器（pg_stat_* 同名同义），凡是 PostgreSQL 可采的指标金仓同样适用。
+	// 2026-11-11 修复：金仓接入时漏改 EngineScope，字典层把全部 PG 系指标拦在
+	// loadEnabledMetricKeys 之外，模板勾了也采不到 —— 明细页只剩主机层指标。
+	engineScopePostgreSQL = "PostgreSQL,Kingbase"
 	engineScopeAllEngines = ""
 	engineScopeSQLServer  = "SQLServer"
 	engineScopeOracle     = "Oracle"
@@ -401,7 +404,7 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"SHOW REPLICA STATUS 查看 Last_IO_Error；检查主库可达性与复制账号权限"},
 	{MetricReplSQLRunning, "复制 SQL 线程", CategoryAvailability, "engine", engineScopeMySQLGroup, "", "gauge", "", "", "engine_sql", "SHOW REPLICA STATUS", "last", "!=", "高", "stat",
 		"SHOW REPLICA STATUS 查看 Last_SQL_Error；通常为主键冲突或表结构不一致"},
-	{MetricReplLagSeconds, "复制延迟", CategoryAvailability, "engine", "MySQL,PostgreSQL", "", "duration", "s", "", "engine_sql", "Seconds_Behind_Source / pg_last_xact_replay_timestamp", "last", ">=", "高", "line",
+	{MetricReplLagSeconds, "复制延迟", CategoryAvailability, "engine", "MySQL,PostgreSQL,Kingbase", "", "duration", "s", "", "engine_sql", "Seconds_Behind_Source / pg_last_xact_replay_timestamp", "last", ">=", "高", "line",
 		"确认备库回放压力；检查大事务、DDL 与单线程回放瓶颈"},
 
 	// ---------------- L1 容量 ----------------
@@ -455,20 +458,20 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"服务端协议层每秒发给客户端的字节数（Bytes_sent）；SQL Server 无实例级字节计数器，按 TDS 包数×包大小近似（上界）；与主机网卡流量（node_network_*）口径不同"},
 	{MetricPerfWriteBytes, "协议流入流量", CategoryPerformance, "engine", engineScopeAllEngines, "", "counter_rate", "B/s", "", "engine_sql", "Bytes_received / dm_exec_connections.num_reads×包大小", "avg", "", "低", "line",
 		"服务端协议层每秒收到客户端的字节数（Bytes_received）；SQL Server 无实例级字节计数器，按 TDS 包数×包大小近似（上界）；与主机网卡流量（node_network_*）口径不同"},
-	{MetricPerfCacheHitRatio, "缓存命中率", CategoryPerformance, "engine", "MySQL,Doris,PostgreSQL,Oracle,SQLServer", "", "percent", "%", "", "engine_sql", "Innodb_buffer_pool_read_requests / blks_hit / buffer cache 命中率 / SQL Server Buffer Manager 命中率", "avg", "<=", "中", "line",
+	{MetricPerfCacheHitRatio, "缓存命中率", CategoryPerformance, "engine", "MySQL,Doris,PostgreSQL,Kingbase,Oracle,SQLServer", "", "percent", "%", "", "engine_sql", "Innodb_buffer_pool_read_requests / blks_hit / buffer cache 命中率 / SQL Server Buffer Manager 命中率", "avg", "<=", "中", "line",
 		"命中率低说明读放大严重；评估 Buffer Pool 大小与索引覆盖（Oracle 为 buffer cache hit ratio，SQL Server 为 Buffer cache hit ratio）"},
-	{MetricPerfLocks, "锁等待数", CategoryPerformance, "engine", "MySQL,Doris,PostgreSQL,Oracle,SQLServer,ClickHouse", "", "count", "count", "", "engine_sql", "Innodb_row_lock_current_waits / pg_locks not granted", "max", ">=", "中", "line",
+	{MetricPerfLocks, "锁等待数", CategoryPerformance, "engine", "MySQL,Doris,PostgreSQL,Kingbase,Oracle,SQLServer,ClickHouse", "", "count", "count", "", "engine_sql", "Innodb_row_lock_current_waits / pg_locks not granted", "max", ">=", "中", "line",
 		"定位阻塞源：MySQL 查 performance_schema.data_lock_waits，PG 用 pg_blocking_pids()"},
 	{MetricPerfConnCount, "连接数", CategoryPerformance, "engine", engineScopeAllEngines, "", "count", "count", "", "engine_sql", "Threads_connected / pg_stat_activity", "last", "", "低", "line", ""},
 	{MetricPerfActiveConn, "活跃连接数", CategoryPerformance, "engine", engineScopeAllEngines, "", "count", "count", "", "engine_sql", "Threads_running / pg_stat_activity state=active", "last", "", "中", "line", ""},
 	{MetricPerfMaxConn, "最大连接数", CategoryPerformance, "engine", engineScopeAllEngines, "", "count", "count", "", "engine_sql", "max_connections", "last", "", "低", "stat", ""},
-	{MetricPerfLongTrx, "长事务数", CategoryPerformance, "engine", "MySQL,TiDB,Doris,PostgreSQL,Oracle,SQLServer", "", "count", "count", "", "engine_sql", "information_schema.innodb_trx / pg_stat_activity.xact_start / v$session 长活跃事务 / dm_tran_active_transactions", "max", ">=", "中", "line",
+	{MetricPerfLongTrx, "长事务数", CategoryPerformance, "engine", "MySQL,TiDB,Doris,PostgreSQL,Kingbase,Oracle,SQLServer", "", "count", "count", "", "engine_sql", "information_schema.innodb_trx / pg_stat_activity.xact_start / v$session 长活跃事务 / dm_tran_active_transactions", "max", ">=", "中", "line",
 		"长事务会阻碍 purge 与 autovacuum，导致 undo/膨胀与锁堆积（Oracle 口径：事务会话挂起超 60 秒；SQL Server 口径：未提交事务开启超 60 秒）"},
 
 	// ---------------- L3 风险 ----------------
 	{MetricRiskXIDAge, "事务ID回卷风险", CategoryRisk, "engine", engineScopePostgreSQL, "", "count", "count", "", "engine_sql", "age(datfrozenxid)", "max", ">=", "高", "gauge",
 		"事务 ID 回卷会强制停机；立即检查 autovacuum 是否被长事务或复制槽阻塞"},
-	{MetricRiskNoPKTables, "无主键表数", CategoryRisk, "engine", "MySQL,TiDB,Doris,PostgreSQL", "", "count", "count", "", "engine_sql", "information_schema.tables without primary key", "sum", ">=", "低", "stat",
+	{MetricRiskNoPKTables, "无主键表数", CategoryRisk, "engine", "MySQL,TiDB,Doris,PostgreSQL,Kingbase", "", "count", "count", "", "engine_sql", "information_schema.tables without primary key", "sum", ">=", "低", "stat",
 		"无主键表影响复制性能与在线 DDL；建议补主键或唯一键"},
 
 	// ---------------- 主机层扩展（node_exporter） ----------------
@@ -508,15 +511,15 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"连接被中止常见于认证失败、网络抖动或 wait_timeout 过短"},
 	{MetricEngSlowQueries, "慢查询速率", CategoryPerformance, "engine", engineScopeMySQLGroup, "", "counter_rate", "count/s", "", "engine_sql", "Slow_queries", "avg", "", "中", "line",
 		"慢查询是性能退化的先行指标；结合慢日志定位具体 SQL"},
-	{MetricEngDeadlocks, "死锁速率", CategoryRisk, "engine", "MySQL,TiDB,Doris,PostgreSQL,SQLServer", "", "counter_rate", "count/s", "", "engine_sql", "innodb_metrics lock_deadlocks / pg_stat_database.deadlocks / Locks Number of Deadlocks/sec", "max", "", "高", "line",
+	{MetricEngDeadlocks, "死锁速率", CategoryRisk, "engine", "MySQL,TiDB,Doris,PostgreSQL,Kingbase,SQLServer", "", "counter_rate", "count/s", "", "engine_sql", "innodb_metrics lock_deadlocks / pg_stat_database.deadlocks / Locks Number of Deadlocks/sec", "max", "", "高", "line",
 		"死锁本身会被自动回滚，频发说明事务并发模型或索引设计有问题"},
-	{MetricEngBinlogWALRate, "日志产生速率", CategoryCapacity, "engine", "MySQL,TiDB,Doris,PostgreSQL", "", "counter_rate", "B/s", "", "engine_sql", "Binlog_bytes_written / WAL LSN 差值", "avg", "", "低", "line",
+	{MetricEngBinlogWALRate, "日志产生速率", CategoryCapacity, "engine", "MySQL,TiDB,Doris,PostgreSQL,Kingbase", "", "counter_rate", "B/s", "", "engine_sql", "Binlog_bytes_written / WAL LSN 差值", "avg", "", "低", "line",
 		"日志速率决定磁盘增长与复制带宽需求；突增通常对应批量写入或 DDL"},
 	{MetricEngReplSlotLag, "复制槽堆积", CategoryRisk, "engine", engineScopePostgreSQL, "", "gauge", "B", "", "engine_sql", "pg_replication_slots", "max", "", "高", "gauge",
 		"失效复制槽会导致 WAL 无限堆积直至磁盘写满；确认对应订阅/备库状态"},
 	{MetricEngSemiSyncStatus, "半同步复制状态", CategoryAvailability, "engine", engineScopeMySQLGroup, "", "gauge", "", "", "engine_sql", "Rpl_semi_sync_source_status", "last", "!=", "高", "stat",
 		"半同步退化为异步意味着数据可靠性降级；检查备库 ACK 是否超时"},
-	{MetricEngLargestTable, "最大表尺寸", CategoryCapacity, "engine", "MySQL,TiDB,Doris,PostgreSQL", "", "gauge", "B", "", "engine_sql", "information_schema.tables / pg_total_relation_size", "max", "", "低", "stat",
+	{MetricEngLargestTable, "最大表尺寸", CategoryCapacity, "engine", "MySQL,TiDB,Doris,PostgreSQL,Kingbase", "", "gauge", "B", "", "engine_sql", "information_schema.tables / pg_total_relation_size", "max", "", "低", "stat",
 		"单表过大会放大备份、DDL 与碎片治理成本；提前规划分区或归档"},
 
 	// 语句执行次数（Com_*）：与聚合口径的 QPS/TPS 互补，用于按语句类型定位增量来源
@@ -589,7 +592,7 @@ var builtinMetricCatalog = []MetricDescriptor{
 	// 连接数
 	{MetricPerfIdleInTrxCount, "空闲事务会话数", CategoryPerformance, "engine", engineScopePostgreSQL, "", "count", "count", "", "engine_sql", "pg_stat_activity state='idle in transaction'", "last", ">=", "中", "line",
 		"当前处于「事务中空闲」状态的会话数；这类会话持有快照却不干活，是膨胀与锁等待的温床"},
-	{MetricPerfWaitingConnCount, "等待中连接数", CategoryPerformance, "engine", "PostgreSQL,SQLServer", "", "count", "count", "", "engine_sql", "pg_stat_activity wait_event IS NOT NULL / dm_exec_requests wait_type IS NOT NULL（仅客户端连接）", "last", ">=", "中", "line",
+	{MetricPerfWaitingConnCount, "等待中连接数", CategoryPerformance, "engine", "PostgreSQL,Kingbase,SQLServer", "", "count", "count", "", "engine_sql", "pg_stat_activity wait_event IS NOT NULL / dm_exec_requests wait_type IS NOT NULL（仅客户端连接）", "last", ">=", "中", "line",
 		"当前处于等待状态的会话数（PG 用 wait_event、SQL Server 用 wait_type，均已排除后台进程，否则空闲实例也会被后台进程的常驻等待刷成非零）；持续不为 0 说明存在锁或 IO 瓶颈"},
 
 	// ---------------- SQL Server 引擎层指标（2012+） ----------------
@@ -676,7 +679,7 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"热点 Region 意味着流量集中在个别 TiKV 节点；持续存在时考虑表设计打散或调大 Region 热点调度"},
 
 	// ---------------- 内核层（方言专有） ----------------
-	{MetricKernRedoWriteRate, "Redo/WAL 写入速率", CategoryPerformance, "kernel", "MySQL,TiDB,Doris,PostgreSQL,Oracle", "", "counter_rate", "B/s", "", "engine_sql", "Innodb_os_log_written / pg_stat_wal.wal_bytes / v$sysstat redo size", "avg", "", "低", "line",
+	{MetricKernRedoWriteRate, "Redo/WAL 写入速率", CategoryPerformance, "kernel", "MySQL,TiDB,Doris,PostgreSQL,Kingbase,Oracle", "", "counter_rate", "B/s", "", "engine_sql", "Innodb_os_log_written / pg_stat_wal.wal_bytes / v$sysstat redo size", "avg", "", "低", "line",
 		"写放大与 IO 压力的根源指标；速率与磁盘写吞吐偏离时关注双写与全页写（Oracle 口径为 redo size 每秒增量）"},
 	{MetricKernWALSwitchRate, "WAL 段切换速率", CategoryPerformance, "kernel", engineScopePostgreSQL, "", "counter_rate", "count/s", "", "engine_sql", "pg_ls_waldir()", "avg", "", "低", "line",
 		"切换过于频繁说明 wal_keep 或 checkpoint 配置不匹配写入量"},
@@ -684,7 +687,7 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"年龄逼近 redo 容量上限会触发激进刷脏风暴；同时决定崩溃恢复时长"},
 	{MetricKernBufferDirtyPct, "缓冲池脏页比例", CategoryPerformance, "kernel", engineScopeMySQLGroup, "", "percent", "%", "", "engine_sql", "Innodb_buffer_pool_pages_dirty/total", "last", ">=", "中", "gauge",
 		"脏页比例过高说明刷脏跟不上写入；突发刷脏会造成查询抖动"},
-	{MetricKernFlushRate, "刷脏速率", CategoryPerformance, "kernel", "MySQL,TiDB,Doris,PostgreSQL", "", "counter_rate", "pages/s", "", "engine_sql", "Innodb_buffer_pool_pages_flushed / pg_stat_bgwriter", "avg", "", "低", "line",
+	{MetricKernFlushRate, "刷脏速率", CategoryPerformance, "kernel", "MySQL,TiDB,Doris,PostgreSQL,Kingbase", "", "counter_rate", "pages/s", "", "engine_sql", "Innodb_buffer_pool_pages_flushed / pg_stat_bgwriter", "avg", "", "低", "line",
 		"与磁盘写吞吐联动看：IO 被刷脏吃掉时业务读写会排队"},
 	{MetricKernHistoryList, "Undo 历史链长度", CategoryRisk, "kernel", engineScopeMySQLGroup, "", "gauge", "count", "", "engine_sql", "SHOW ENGINE INNODB STATUS", "max", ">=", "高", "line",
 		"长事务阻碍 purge 导致 undo 膨胀；定位并结束长事务后观察回落"},
@@ -692,7 +695,7 @@ var builtinMetricCatalog = []MetricDescriptor{
 		"死元组堆积导致表膨胀与扫描变慢；确认 autovacuum 是否跟得上"},
 	{MetricKernAutovacuumWorkers, "Autovacuum 工作进程", CategoryPerformance, "kernel", engineScopePostgreSQL, "", "gauge", "count", "", "engine_sql", "pg_stat_activity", "last", "", "低", "stat",
 		"长期打满 worker 上限说明回收压力大；检查单表级 vacuum 配置"},
-	{MetricKernRollbackRatio, "事务回滚率", CategoryRisk, "kernel", "MySQL,TiDB,Doris,PostgreSQL", "", "percent", "%", "", "engine_sql", "rollback/(commit+rollback)", "last", ">=", "中", "gauge",
+	{MetricKernRollbackRatio, "事务回滚率", CategoryRisk, "kernel", "MySQL,TiDB,Doris,PostgreSQL,Kingbase", "", "percent", "%", "", "engine_sql", "rollback/(commit+rollback)", "last", ">=", "中", "gauge",
 		"回滚率异常升高通常对应应用错误、死锁或唯一键冲突"},
 	{MetricKernLWLockWaits, "轻量锁等待", CategoryPerformance, "kernel", engineScopePostgreSQL, "", "gauge", "count", "", "engine_sql", "pg_stat_activity wait_event_type=LWLock", "max", "", "中", "line",
 		"LWLock 等待说明内核内部争抢；结合 wait_event 定位具体闩锁"},
@@ -852,6 +855,7 @@ type EngineCapability struct {
 var engineCapabilities = []EngineCapability{
 	{"mysql", "MySQL", true, "SHOW GLOBAL STATUS + SHOW REPLICA STATUS 直连采集"},
 	{"postgresql", "PostgreSQL", true, "pg_stat_database / pg_stat_activity / pg_locks / pg_stat_replication"},
+	{"kingbase", "Kingbase", true, "兼容 PostgreSQL 协议，复用 PG 采集器（pg_stat_database / pg_stat_activity / pg_locks / pg_stat_replication）"},
 	{"tidb", "TiDB", true, "兼容 MySQL 协议（SHOW GLOBAL STATUS）+ TiDB 特有表（cluster_info / tidb_trx / data_lock_waits / tikv_store_status / tidb_hot_regions）直连采集；TiKV 细分指标（QPS/延迟等）建议走 Prometheus"},
 	{"doris", "Doris", true, "兼容 MySQL 协议，复用 MySQL 采集器"},
 	{"clickhouse", "ClickHouse", true, "system.events + system.metrics"},
@@ -867,9 +871,20 @@ var engineCapabilityIndex = func() map[string]EngineCapability {
 	return index
 }()
 
-// resolveEngine 归一化引擎标识
+// resolveEngine 归一化引擎标识。
+//
+// 除了去空白 + 转小写，还要把「同一引擎的别名」收敛到一个 key：
+// 金仓的历史写法有 kingbase / kingbasees / kingbase es 多种，而采集分支、
+// 展示目录（displayLayouts）、模板治理（hostMetricsInTemplate）都按 key 索引，
+// 不归一就会出现「采集认、展示不认」的半通状态 —— 金仓实例少一整个
+// 「基础指标」Tab 就是这么来的。归一规则与 internal/common/dbfamily 保持一致。
 func resolveEngine(dbType string) string {
-	return strings.ToLower(strings.TrimSpace(dbType))
+	switch key := strings.ToLower(strings.TrimSpace(dbType)); key {
+	case "kingbasees", "kingbase es", "kingbase-es":
+		return "kingbase"
+	default:
+		return key
+	}
 }
 
 // engineImplemented 该引擎是否具备引擎层采集能力。

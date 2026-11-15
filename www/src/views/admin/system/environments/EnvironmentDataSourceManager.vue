@@ -174,6 +174,8 @@ const formatDbType = (value) => {
   switch (normalized) {
     case 'postgresql':
       return 'PostgreSQL'
+    case 'kingbase':
+      return 'Kingbase'
     case 'sqlserver':
       return 'SQL Server'
     case 'clickhouse':
