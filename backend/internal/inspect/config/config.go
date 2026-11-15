@@ -40,8 +40,15 @@ type InspectParams struct {
 	CHECK_AUTOINCREMENT_COL_NAME_IS_ID   bool                // 限制自增列名字为 ID（规则 limit_auto_inc_col_name_字is_id）
 	CHECK_AUTOINCREMENT_COL_UNSIGNED     bool                // 限制自增列为无符号（规则 limit_auto_inc_col_is_unsigned）
 	ENABLE_CREATE_VIEW                   bool                // 是否支持创建和使用视图
-	INNODB_ROW_FORMAT                    []string            // InnoDB表支持的行格式
-	MAX_TABLE_COLUMNS                    int                 // 表最多允许定义的列数（规则 limit_tbl_col_的count）
+	// 对象类能力开关（SQL Server 段规则消费：disable_procedure_related_op 等）。
+	// 默认 true=允许；规范中开启对应「禁止…操作」规则时置为 false。
+	// 之所以只由 SQL Server 引擎读取：MySQL/PG/Oracle 段从未实现这三条规则的判定，
+	// 加进来只是为了让新数据库类型能真正落地「禁止存储过程/函数/触发器」规范。
+	ENABLE_PROCEDURE_OBJECT bool
+	ENABLE_FUNCTION_OBJECT  bool
+	ENABLE_TRIGGER_OBJECT   bool
+	INNODB_ROW_FORMAT       []string // InnoDB表支持的行格式
+	MAX_TABLE_COLUMNS       int      // 表最多允许定义的列数（规则 limit_tbl_col_的count）
 	// COLUMN
 	MAX_COLUMN_NAME_LENGTH               int      // 列名的长度
 	CHECK_COLUMN_CHARSET                 bool     // 是否检查列的字符集（规则 no_set_col_的charset：不能显式设置列的字符集）
@@ -216,6 +223,39 @@ func (p *InspectParams) IsForbiddenPGType(typeName string) bool {
 	return ok
 }
 
+// IsForbiddenSQLServerType 判断给定的 SQL Server 类型名（含常见同义词）是否被当前规范禁用。
+//
+// 与 MySQL/PG 的口径差异：
+//   - T-SQL 的类型同义词（integer/int、numeric/decimal、character/char）归一到同一规范名，
+//     否则用户配了 decimal 却写 numeric 就会漏判；
+//   - 长度/精度后缀在解析层已剥掉（VARCHAR(50) → varchar），这里只处理类型名本身；
+//   - `rowversion` 与 `timestamp` 在 SQL Server 里是同一个类型（二进制版本号，不是时间戳），
+//     统一归一到 timestamp，避免用户配了 timestamp 却漏掉 rowversion 写法。
+func (p *InspectParams) IsForbiddenSQLServerType(typeName string) bool {
+	if !p.CHECK_COLUMN_FORBIDDEN_TYPES || len(p.COLUMN_FORBIDDEN_TYPES) == 0 {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(typeName))
+	aliases := map[string]string{
+		"integer":            "int",
+		"numeric":            "decimal",
+		"dec":                "decimal",
+		"character":          "char",
+		"char varying":       "varchar",
+		"national char":      "nchar",
+		"national character": "nchar",
+		"double precision":   "float",
+		"rowversion":         "timestamp",
+		"binary varying":     "varbinary",
+	}
+	if canon, ok := aliases[normalized]; ok {
+		normalized = canon
+	}
+	set := normalizeForbiddenTypes(p.COLUMN_FORBIDDEN_TYPES)
+	_, ok := set[normalized]
+	return ok
+}
+
 // 主键列类型白名单（规则 limit_pk_col_type 的 pk_types）的多库字典。
 //
 // 历史坑：这份字典曾经只有 MySQL 体系类型，导致 PostgreSQL 的 uuid/bigserial/jsonb、
@@ -254,6 +294,25 @@ var OraclePrimaryKeyTypes = []string{
 	"interval", "rowid", "xmltype",
 }
 
+// SQLServerPrimaryKeyTypes SQL Server 主键列类型可选值。
+//
+// 口径：sys.types 里允许出现在主键中的类型。T-SQL 与 MySQL/Oracle 的两处关键差异：
+//   - 没有 unsigned / zerofill 概念，整数类型没有无符号变体；
+//   - 字符类型按「字符」计长（VARCHAR 受排序规则影响，NVARCHAR 固定 Unicode），
+//     因此不列 MAX 变体 —— 它们不能做主键。
+//
+// 刻意不收录 TEXT/NTEXT/IMAGE/XML/SQL_VARIANT/GEOGRAPHY/GEOMETRY/HIERARCHYID：
+// 这些类型不能建主键，列进来只会让用户配出一条永远无法满足的规则。
+var SQLServerPrimaryKeyTypes = []string{
+	"tinyint", "smallint", "int", "bigint", "bit",
+	"decimal", "numeric", "money", "smallmoney", "float", "real",
+	"char", "varchar", "nchar", "nvarchar",
+	"binary", "varbinary",
+	"date", "time", "datetime", "datetime2", "smalldatetime", "datetimeoffset",
+	"uniqueidentifier", "rowversion", "timestamp",
+	"sysname",
+}
+
 // PrimaryKeyTypesByDB 按数据库类型索引的主键列类型白名单
 var PrimaryKeyTypesByDB = map[string][]string{
 	"mysql":      MySQLPrimaryKeyTypes,
@@ -262,14 +321,16 @@ var PrimaryKeyTypesByDB = map[string][]string{
 	"postgres":   PostgreSQLPrimaryKeyTypes,
 	"postgresql": PostgreSQLPrimaryKeyTypes,
 	"oracle":     OraclePrimaryKeyTypes,
+	"sqlserver":  SQLServerPrimaryKeyTypes,
+	"mssql":      SQLServerPrimaryKeyTypes,
 }
 
 // PrimaryKeySupportedTypes 全部可选值的并集（规则未标注数据库 / db_type=all 时使用）。
 // 与前端「编辑多个数据库的规则时取并集」的行为保持一致。
 var PrimaryKeySupportedTypes = func() []string {
-	out := make([]string, 0, 96)
-	seen := make(map[string]struct{}, 96)
-	for _, group := range [][]string{MySQLPrimaryKeyTypes, PostgreSQLPrimaryKeyTypes, OraclePrimaryKeyTypes} {
+	out := make([]string, 0, 128)
+	seen := make(map[string]struct{}, 128)
+	for _, group := range [][]string{MySQLPrimaryKeyTypes, PostgreSQLPrimaryKeyTypes, OraclePrimaryKeyTypes, SQLServerPrimaryKeyTypes} {
 		for _, t := range group {
 			if _, ok := seen[t]; ok {
 				continue

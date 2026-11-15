@@ -408,13 +408,15 @@ import mysqlLogo from '@/assets/logo/mysql.png'
 import pgLogo from '@/assets/logo/postgresql.png'
 import oracleLogo from '@/assets/logo/oracle.png'
 import tidbLogo from '@/assets/logo/tidb.png'
+import sqlserverLogo from '@/assets/logo/sqlserver.png'
+import kingbaseLogo from '@/assets/logo/kingbase.png'
 
 // 规则目录的数据库标识 → 展示名 / 品牌图标（与 utils/dbTypeLogo.js 的图标资源保持一致）
-const DB_LABELS = { mysql: 'MySQL', postgres: 'PostgreSQL', oracle: 'Oracle', tidb: 'TiDB' }
-const DB_LOGO = { mysql: mysqlLogo, postgres: pgLogo, oracle: oracleLogo, tidb: tidbLogo }
+const DB_LABELS = { mysql: 'MySQL', postgres: 'PostgreSQL', kingbase: 'Kingbase', oracle: 'Oracle', tidb: 'TiDB', sqlserver: 'SQLServer' }
+const DB_LOGO = { mysql: mysqlLogo, postgres: pgLogo, kingbase: kingbaseLogo, oracle: oracleLogo, tidb: tidbLogo, sqlserver: sqlserverLogo }
 
-// 数据库 logo 固定顺序
-const DB_ORDER = ['mysql', 'postgres', 'oracle', 'tidb']
+// 数据库 logo 固定顺序（金仓紧跟 PostgreSQL，SQLServer 排在 TiDB 之后，与后端目录顺序一致）
+const DB_ORDER = ['mysql', 'postgres', 'kingbase', 'oracle', 'tidb', 'sqlserver']
 
 // 把 db_type（mysql/postgres/oracle/tidb/all）归一化为按固定顺序排列的数组
 const normalizeDbTypes = (dbTypes) => {
@@ -675,13 +677,27 @@ const ORACLE_TYPE_OPTIONS = [
   'clob', 'nclob', 'blob', 'bfile',
   'date', 'timestamp', 'interval', 'rowid', 'xmltype',
 ]
+// SQLServer 的类型体系：没有 mediumint/year/enum/set，多了 money / sql_variant /
+// uniqueidentifier / datetimeoffset / 空间类型；VARCHAR(MAX) 等 MAX 变体在清单里
+// 统一按基础类型名展示（长度由「字符长度上限」规则单独约束）。
+const SQLSERVER_TYPE_OPTIONS = [
+  'tinyint', 'smallint', 'int', 'bigint', 'bit',
+  'decimal', 'numeric', 'money', 'smallmoney', 'float', 'real',
+  'char', 'varchar', 'nchar', 'nvarchar', 'text', 'ntext',
+  'binary', 'varbinary', 'image',
+  'date', 'time', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset',
+  'timestamp', 'rowversion', 'uniqueidentifier', 'xml', 'sql_variant', 'sysname',
+  'geography', 'geometry', 'hierarchyid',
+]
 // 主键类型可选值：与禁用类型同源（主键类型白名单同样按库区分）
 const TYPE_OPTIONS_BY_DB = {
   // serial 是 MySQL 主键常见别名，补充进 MySQL 系清单（禁用类型里也可选）
   mysql: [...FORBIDDEN_TYPE_OPTIONS, 'serial'],
   tidb: [...FORBIDDEN_TYPE_OPTIONS, 'serial'],
   postgres: PG_TYPE_OPTIONS,
+  kingbase: PG_TYPE_OPTIONS, // 金仓与 PG 同一套类型体系
   oracle: ORACLE_TYPE_OPTIONS,
+  sqlserver: SQLSERVER_TYPE_OPTIONS,
 }
 // unionTypeOptions 把多个库的可用类型合并（保持声明顺序、去重）
 const unionTypeOptions = (dbTypes) => {
@@ -698,14 +714,33 @@ const unionTypeOptions = (dbTypes) => {
   // 库未知（脏数据/空）时回退 MySQL 清单，保证下拉不空
   return list.length ? list : FORBIDDEN_TYPE_OPTIONS
 }
-// 禁用类型默认值：Oracle 用其淘汰类型；其余沿用 MySQL 口径（与后端参数回退一致）
-const defaultForbiddenTypes = (dbTypes) =>
-  dbTypes.length === 1 && dbTypes[0] === 'oracle' ? ['long', 'long raw'] : FORBIDDEN_TYPE_DEFAULTS
-// 主键类型默认值：Oracle 主键常用 NUMBER；其余沿用 MySQL 口径
-const defaultPkColTypes = (dbTypes) =>
-  dbTypes.includes('oracle') && !dbTypes.includes('mysql') && !dbTypes.includes('tidb')
+// SQLServer 的默认淘汰类型（与后端 config.SQLServerForbiddenTypes 保持一致：
+// 都是已有更好替代、且会带来查询/存储问题的老类型）
+const SQLSERVER_FORBIDDEN_TYPE_DEFAULTS = ['text', 'ntext', 'image', 'sql_variant', 'timestamp', 'money', 'smallmoney']
+// SQLServer 可做主键的类型（与后端 config.SQLServerPrimaryKeyTypes 一致：
+// MAX 变体、text/ntext/image/xml/sql_variant 与空间类型都不能做主键）
+const SQLSERVER_PK_COL_TYPE_DEFAULT = [
+  'tinyint', 'smallint', 'int', 'bigint', 'bit',
+  'decimal', 'numeric', 'money', 'smallmoney', 'float', 'real',
+  'char', 'varchar', 'nchar', 'nvarchar', 'binary', 'varbinary',
+  'date', 'time', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset',
+  'uniqueidentifier', 'rowversion', 'timestamp', 'sysname',
+]
+// 禁用类型默认值：Oracle / SQLServer 各用自己体系的淘汰类型；
+// 其余（含 all 及跨库能力项）沿用 MySQL 口径，与后端 applyStandardRule 的回退分支一致。
+const defaultForbiddenTypes = (dbTypes) => {
+  if (dbTypes.length === 1 && dbTypes[0] === 'oracle') return ['long', 'long raw']
+  if (dbTypes.length === 1 && dbTypes[0] === 'sqlserver') return SQLSERVER_FORBIDDEN_TYPE_DEFAULTS
+  return FORBIDDEN_TYPE_DEFAULTS
+}
+// 主键类型默认值：Oracle 主键常用 NUMBER、SQLServer 用其自身可做主键的清单；
+// 其余沿用 MySQL 口径
+const defaultPkColTypes = (dbTypes) => {
+  if (dbTypes.length === 1 && dbTypes[0] === 'sqlserver') return SQLSERVER_PK_COL_TYPE_DEFAULT
+  return dbTypes.includes('oracle') && !dbTypes.includes('mysql') && !dbTypes.includes('tidb')
     ? ['number']
     : PK_COL_TYPE_DEFAULT
+}
 
 // 限制库的字符集规则的参数键（与后端 rp.Charsets 对齐）
 const DATABASE_CHARSET_RULE_KEY = 'limit_database_charset'

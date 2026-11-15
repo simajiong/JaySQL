@@ -48,6 +48,27 @@ func TestSplitPGDemoSQL(t *testing.T) {
 	}
 }
 
+// NormalizeLeading 必须折叠空白：多空格/Tab/换行写法与单空格等价。
+// 回归用例来自线上工单 `create  table  t_01(id int)`——双空格导致 PG 引擎
+// 语句分发落空、整条 DDL 零结论（规范开了也永远不报）。
+func TestNormalizeLeadingCollapsesWhitespace(t *testing.T) {
+	cases := []string{
+		"create  table  t_01(id int)",
+		"create\ttable\tt_01(id int)",
+		"create\n  table\n  t_01(id int)",
+		"  CREATE   TABLE   t_01(id int)  ",
+	}
+	for _, sql := range cases {
+		if got := NormalizeLeading(sql); !strings.HasPrefix(got, "create table t_01") {
+			t.Errorf("NormalizeLeading(%q) = %q，期望以 \"create table t_01\" 开头", sql, got)
+		}
+	}
+	// 前导注释 + 多个空白同样要归一
+	if got := NormalizeLeading("-- 说明\n  create   table  t2(a int)"); !strings.HasPrefix(got, "create table t2") {
+		t.Errorf("带注释的多空白语句归一失败：%q", got)
+	}
+}
+
 func TestSplitCommentSemicolon(t *testing.T) {
 	// 注释里出现分号不能被误拆
 	sql := "-- 注释里有分号; 测试\nSELECT 1;\n/* 块注释; 也有分号 */UPDATE t SET a=1;"
@@ -67,15 +88,15 @@ func TestSplitDollarQuoted(t *testing.T) {
 
 func TestStatementType(t *testing.T) {
 	cases := map[string]string{
-		"CREATE TABLE a (id int);":                       "DDL",
-		"COMMENT ON TABLE a IS 'x';":                     "DDL",
-		"CREATE INDEX idx ON a(col);":                    "DDL",
-		"DO $$ BEGIN END $$;":                            "DDL",
-		"INSERT INTO a VALUES (1);":                      "DML",
-		"UPDATE a SET b=1;":                              "DML",
-		"SELECT * FROM a;":                               "EXPORT",
+		"CREATE TABLE a (id int);":                     "DDL",
+		"COMMENT ON TABLE a IS 'x';":                   "DDL",
+		"CREATE INDEX idx ON a(col);":                  "DDL",
+		"DO $$ BEGIN END $$;":                          "DDL",
+		"INSERT INTO a VALUES (1);":                    "DML",
+		"UPDATE a SET b=1;":                            "DML",
+		"SELECT * FROM a;":                             "EXPORT",
 		"-- 注释\nWITH c AS (SELECT 1) SELECT * FROM c;": "EXPORT",
-		"GRANT SELECT ON a TO b;":                        "DDL",
+		"GRANT SELECT ON a TO b;":                      "DDL",
 	}
 	for sql, want := range cases {
 		if got := StatementType(sql); got != want {

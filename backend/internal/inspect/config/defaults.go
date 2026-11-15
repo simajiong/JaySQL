@@ -47,6 +47,9 @@ func DefaultInspectParams() InspectParams {
 		CHECK_TABLE_AUTOINCREMENT_INIT_VALUE: false, // 规则：limit_建tbl_auto_inc_init
 		TABLE_AUTOINCREMENT_INIT_VALUE:       0,     // 0 表示未配置，规则启用时取引擎默认 1
 		ENABLE_CREATE_VIEW:                   true,  // 规则：disable_view_related_op（开启时置为 false）
+		ENABLE_PROCEDURE_OBJECT:              true,  // 规则：sqlserver.struct.disable_proc_related_op（开启时置为 false）
+		ENABLE_FUNCTION_OBJECT:               true,  // 规则：sqlserver.struct.disable_custom_function_related_op
+		ENABLE_TRIGGER_OBJECT:                true,  // 规则：sqlserver.struct.disable_trigger_related_op
 		INNODB_ROW_FORMAT:                    nil,   // 空表示不检查
 		MAX_TABLE_COLUMNS:                    0,     // 规则：limit_tbl_col_的count，0 表示不限制
 		// COLUMN

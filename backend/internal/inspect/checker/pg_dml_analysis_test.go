@@ -50,3 +50,34 @@ func TestPGDMLAnalysisTmp(t *testing.T) {
 		})
 	}
 }
+
+// TestPGDMLWhereClause 影响行数估算依赖 WHERE 条件原文（规则 limit_update_delete_affected_rows），
+// 提取须到 order by / limit / returning / for update 为止。
+func TestPGDMLWhereClause(t *testing.T) {
+	cases := []struct {
+		name  string
+		sql   string
+		where string
+	}{
+		{name: "简单where", sql: "UPDATE t_order SET status = 1 WHERE id > 100", where: "id > 100"},
+		{name: "where到order_by为止", sql: "UPDATE t SET a = 1 WHERE id = 2 ORDER BY id LIMIT 5", where: "id = 2"},
+		{name: "delete带returning", sql: "DELETE FROM t WHERE id IN (1,2) RETURNING id", where: "id IN (1,2)"},
+		{name: "schema限定表", sql: "UPDATE public.t SET a = 1 WHERE id = 9", where: "id = 9"},
+		{name: "无where", sql: "DELETE FROM t", where: ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := analyzePGDML(c.sql)
+			if !res.OK {
+				t.Fatalf("analyzePGDML not OK")
+			}
+			if res.WhereClause != c.where {
+				t.Errorf("WhereClause=%q want %q", res.WhereClause, c.where)
+			}
+		})
+	}
+	res := analyzePGDML("UPDATE public.t_order SET a = 1 WHERE id = 9")
+	if res.TableSchema != "public" || res.Table != "t_order" {
+		t.Errorf("TableSchema=%q Table=%q, want public/t_order", res.TableSchema, res.Table)
+	}
+}

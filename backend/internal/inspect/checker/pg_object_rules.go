@@ -36,6 +36,10 @@ type pgMetaResolver interface {
 	TableExists(table string) (bool, error)
 	ColumnExists(table, column string) (bool, error)
 	IndexExists(index string) (bool, error)
+	// CountWhere 对目标表按 WHERE 原文做 COUNT(*)，估算 UPDATE/DELETE 影响行数
+	// （规则 limit_update_delete_affected_rows，与 Oracle/SQLServer 的 CountWhere 同构）。
+	// schema 为空表示按连接的 search_path 处理。
+	CountWhere(table, schema, whereClause string) (int64, error)
 }
 
 // pgDBResolver 生产实现：复用 pgInspectContext 已有的连接与 schema 处理。
@@ -66,6 +70,13 @@ func (r pgDBResolver) ColumnExists(table, column string) (bool, error) {
 
 func (r pgDBResolver) IndexExists(index string) (bool, error) {
 	return r.ctx.indexExistsIn(r.schema, index)
+}
+
+// CountWhere 影响行数估算：对同条件做 COUNT(*)。
+// schema 以语句解析结果为准（res.TableSchema），语句未限定时按 search_path 处理；
+// 不使用 r.schema 兜底，与原 pgCountWhere 行为保持一致。
+func (r pgDBResolver) CountWhere(table, schema, whereClause string) (int64, error) {
+	return r.ctx.pgCountWhere(table, schema, whereClause)
 }
 
 // metaResolver 取当前上下文的元信息探针（未注入桩实现时走真实库查询）。

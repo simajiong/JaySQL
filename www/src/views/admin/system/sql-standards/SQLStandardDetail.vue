@@ -177,8 +177,8 @@ const currentRules = computed(() =>
   activeTab.value === 'structure' ? structureRules.value : queryUpdateRules.value,
 )
 
-const DB_LABELS = { mysql: 'MySQL', postgres: 'PostgreSQL', oracle: 'Oracle', tidb: 'TiDB' }
-const DB_ORDER = ['mysql', 'postgres', 'oracle', 'tidb']
+const DB_LABELS = { mysql: 'MySQL', postgres: 'PostgreSQL', kingbase: 'Kingbase', oracle: 'Oracle', tidb: 'TiDB', sqlserver: 'SQLServer' }
+const DB_ORDER = ['mysql', 'postgres', 'kingbase', 'oracle', 'tidb', 'sqlserver']
 
 // 数据库类型选项：只保留当前 Tab 实际存在的数据库，避免选中后永远筛不出结果
 const dbTypeOptions = computed(() => {

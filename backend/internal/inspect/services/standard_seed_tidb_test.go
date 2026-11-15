@@ -163,9 +163,13 @@ func TestNormalizeRuleDbTypeCoversAllInstanceTypes(t *testing.T) {
 	cases := map[string]string{
 		"MySQL":      "mysql",
 		"PostgreSQL": "postgres",
+		"Kingbase":   "kingbase", // 金仓有独立目录（按 postgres 段镜像生成）
+		"KingbaseES": "kingbase", // 金仓产品全称，实例表里也可能出现
 		"Oracle":     "oracle",
 		"TiDB":       "tidb",
-		"Doris":      "mysql", // Doris 暂无独立目录，复用 MySQL 规则
+		"Doris":      "mysql",     // Doris 暂无独立目录，复用 MySQL 规则
+		"SQLServer":  "sqlserver", // SQL Server 有独立目录
+		"MSSQL":      "sqlserver", // 同一数据库的另一种写法
 	}
 	for in, want := range cases {
 		if got := normalizeRuleDbType(in); got != want {

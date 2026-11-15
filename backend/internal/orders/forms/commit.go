@@ -9,7 +9,7 @@ import (
 type GetOrderInstancesForm struct {
 	PaginationQ pagination.Pagination
 	ID          uint64 `form:"id"  json:"id" binding:"required"`
-	DbType      string `form:"db_type" json:"db_type" binding:"required,oneof=MySQL Oracle SQLServer TiDB Doris PostgreSQL ClickHouse"`
+	DbType      string `form:"db_type" json:"db_type" binding:"required,oneof=MySQL Oracle SQLServer TiDB Doris PostgreSQL Kingbase ClickHouse"`
 }
 
 type GetOrderDataSourcesForm struct {
@@ -31,7 +31,10 @@ type GetOrderUsersForm struct {
 type CreateOrderForm struct {
 	Title  string          `form:"title" json:"title" binding:"required,min=3,max=196"`
 	Remark string          `form:"remark" json:"remark" binding:"max=1024"`
-	DBType models.EnumType `form:"db_type" json:"db_type" binding:"omitempty,oneof=MySQL PostgreSQL Oracle TiDB Doris"`
+	// 与 validateOrderSQLTypeSupport / GetOrderDataSourcesService / execute 分发同口径：
+	// SQLServer（含别名 MSSQL）工单链路（审核/执行器）已实现，这里必须放行，否则
+	// 「下拉能选 SQLServer 实例、提交却被 binding 拦截」。
+	DBType models.EnumType `form:"db_type" json:"db_type" binding:"omitempty,oneof=MySQL PostgreSQL Kingbase Oracle TiDB Doris SQLServer MSSQL"`
 	// MIXED：同一工单内 DDL 与 DML 并存（类型由后端按内容推断，前端可不传）
 	SQLType               models.EnumType `form:"sql_type" json:"sql_type" binding:"omitempty,oneof=DML DDL MIXED"`
 	Environment           int             `form:"environment" json:"environment"`

@@ -140,6 +140,10 @@ type SyntaxInspectService struct {
 	// oracleMeta Oracle 引擎的元信息探针，仅供单测注入桩实现；生产为 nil（走真实库查询）。
 	// 见 oracle_object_rules.go: oracleMetaResolver。
 	oracleMeta oracleMetaResolver
+
+	// sqlserverMeta SQL Server 引擎的元信息探针，仅供单测注入桩实现；生产为 nil（走真实库查询）。
+	// 见 sqlserver_object_rules.go: sqlServerMetaResolver。
+	sqlserverMeta sqlServerMetaResolver
 }
 
 // 初始化DB
@@ -232,13 +236,21 @@ func (s *SyntaxInspectService) Run() (returnData []ReturnData, err error) {
 	// 初始化DB
 	s.initDB()
 	// PG 类数据库走 PG 专用引擎：判定参数与 MySQL 完全一致（来自实例绑定的规范），
-	// 仅实现方式不同（TiDB parser 无法解析 IDENTITY / COMMENT ON 等 PG 语法）
-	if strings.EqualFold(s.DbType, "PostgreSQL") {
+	// 仅实现方式不同（TiDB parser 无法解析 IDENTITY / COMMENT ON 等 PG 语法）。
+	// 金仓 KingbaseES 兼容 PG 方言，同样走 PG 引擎（规则目录也归一在 postgres 段）。
+	if strings.EqualFold(s.DbType, "PostgreSQL") ||
+		strings.EqualFold(s.DbType, "Kingbase") ||
+		strings.EqualFold(s.DbType, "KingbaseES") {
 		return s.runPGInspect()
 	}
 	// Oracle 同样走专用引擎（文本解析；TiDB parser 无法解析 NUMBER/VARCHAR2/IDENTITY 等语法）
 	if strings.EqualFold(s.DbType, "Oracle") {
 		return s.runOracleInspect()
+	}
+	// SQL Server 同样走专用引擎（文本解析；T-SQL 与 MySQL 方言完全不兼容：
+	// [方括号标识符]、IDENTITY、NVARCHAR、TOP、sp_addextendedproperty 等）
+	if strings.EqualFold(s.DbType, "SQLServer") || strings.EqualFold(s.DbType, "MSSQL") {
+		return s.runSQLServerInspect()
 	}
 	// RequestID
 	requestID := requestid.Get(s.C)

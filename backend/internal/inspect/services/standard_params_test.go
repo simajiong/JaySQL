@@ -260,6 +260,26 @@ func TestApplyStandardRuleSwitch(t *testing.T) {
 			check: func(p config.InspectParams) bool { return p.MAX_AFFECTED_ROWS == 0 }, expected: true,
 		},
 		{
+			name: "PG影响行数规则开启且配置阈值", ruleKey: "postgres.query_update.limit_update_delete_affected_rows", level: "must", params: `{"max_affected_rows": 20000}`,
+			check: func(p config.InspectParams) bool { return p.MAX_AFFECTED_ROWS == 20000 }, expected: true,
+		},
+		{
+			name: "PG影响行数规则开启未配置=>回退默认10000", ruleKey: "postgres.query_update.limit_update_delete_affected_rows", level: "suggest",
+			check: func(p config.InspectParams) bool { return p.MAX_AFFECTED_ROWS == defaultMaxAffectedRows }, expected: true,
+		},
+		{
+			name: "PG影响行数规则关闭=>不限制", ruleKey: "postgres.query_update.limit_update_delete_affected_rows", level: "off",
+			check: func(p config.InspectParams) bool { return p.MAX_AFFECTED_ROWS == 0 }, expected: true,
+		},
+		{
+			name: "PG LIMIT行数规则开启且配置阈值", ruleKey: "postgres.query_update.limit_update_delete_data_size", level: "suggest", params: `{"max_limit_rows": 500}`,
+			check: func(p config.InspectParams) bool { return p.DML_MAX_LIMIT_ROWS == 500 }, expected: true,
+		},
+		{
+			name: "PG LIMIT行数规则关闭=>不限制", ruleKey: "postgres.query_update.limit_update_delete_data_size", level: "off",
+			check: func(p config.InspectParams) bool { return p.DML_MAX_LIMIT_ROWS == 0 }, expected: true,
+		},
+		{
 			name: "INSERT行数规则开启未配置=>回退默认1000", ruleKey: "postgres.query_update.limit_insert_values_row_count", level: "suggest",
 			check: func(p config.InspectParams) bool {
 				return p.MAX_INSERT_ROWS == defaultMaxInsertRows && defaultMaxInsertRows == 1000

@@ -410,8 +410,10 @@ func (s *AdminSQLStandardAvailableInstancesService) Run() (responseData any, tot
 	var instances []InstanceInfo
 	tx := global.App.DB.Table("insight_instances").
 		Select("instance_id, hostname, port, db_type").
-		// 可绑定规范的实例类型 = 工单审核引擎支持范围（MySQL/TiDB/Doris 共用 MySQL 引擎）
-		Where("db_type in ?", []string{"MySQL", "PostgreSQL", "Oracle", "TiDB", "Doris"})
+		// 可绑定规范的实例类型 = 工单审核引擎支持范围（MySQL/TiDB/Doris 共用 MySQL 引擎，
+		// Kingbase 共用 PG 引擎）。漏掉某一类会让该类型的实例在「绑定实例」里根本选不到，
+		// 表现为「规范建好了但绑不上」——金仓此前就是这一种情况。
+		Where("db_type in ?", []string{"MySQL", "PostgreSQL", "Kingbase", "Oracle", "TiDB", "Doris"})
 	if len(boundInstanceIDs) > 0 {
 		tx = tx.Where("instance_id not in ?", boundInstanceIDs)
 	}
@@ -507,18 +509,7 @@ func InitializeDefaultSQLStandards(db *gorm.DB) error {
 				if baseLevel == "" {
 					baseLevel = r.Level
 				}
-				level := baseLevel
-				if st.EnvType == "prod" {
-					// 生产环境更严格：建议改进提升为必须改进
-					if level == "suggest" {
-						level = "must"
-					}
-				} else {
-					// 开发环境更宽松：必须改进降低为建议改进
-					if level == "must" {
-						level = "suggest"
-					}
-				}
+				level := seedLevelForEnv(baseLevel, st.EnvType)
 				newRules = append(newRules, models.InsightSQLStandardRule{
 					StandardID: st.ID,
 					RuleKey:    r.RuleKey,
@@ -539,8 +530,153 @@ func InitializeDefaultSQLStandards(db *gorm.DB) error {
 				return err
 			}
 		}
-		return nil
+		// 存量规范补种金仓段：上面「有规则就跳过」的逻辑会让老环境永远拿不到
+		// kingbase.* 条目（表现为规范页看不到金仓、金仓实例只能靠 postgres 段兜底）。
+		// 这里做一次幂等补齐，只补「缺金仓段」的规范，不动任何既有条目的级别与参数。
+		if err := ensureKingbaseRules(tx); err != nil {
+			return err
+		}
+		// 通用目录对账：金仓镜像依赖「库内 PG 段完整」，而老环境的 PG 段本身可能缺
+		// 后来新增的规则（如 postgres 的「影响行数」），SQLServer 等靠一次性补种脚本
+		// 才进入老规范。这里按 rule_key 对目录做最终对账，兜住所有历史缺口。
+		return ensureCatalogMissingRules(tx)
 	})
+}
+
+// seedLevelForEnv 按规范环境推导种子条目的落地级别（与播种逻辑同口径）：
+// 生产更严格（suggest→must），开发更宽松（must→suggest）。
+func seedLevelForEnv(baseLevel, envType string) string {
+	if envType == "prod" {
+		if baseLevel == "suggest" {
+			return "must"
+		}
+		return baseLevel
+	}
+	if baseLevel == "must" {
+		return "suggest"
+	}
+	return baseLevel
+}
+
+// ensureCatalogMissingRules 为已存在的规范补齐规则目录中缺失的条目（幂等）。
+//
+// 背景：InitializeDefaultSQLStandards 只在规范「一条规则都没有」时全量播种，
+// 此后目录新增的规则（新数据库类型、新能力项）永远不会进入老规范——表现为
+// 老环境升级后规范页看不到新库/新规则。这里按 rule_key 对账：只补缺失行，
+// 绝不更新已有行（级别/参数保住管理员的自定义调整）。规则行没有删除入口，
+// 所以「管理员有意删掉某条」的场景不存在，重启补齐是安全的。
+//
+// 执行顺序上放在 ensureKingbaseRules 之后：金仓段优先以「库内 PG 段」为模板
+// （继承管理员对 PG 的级别/参数调整），目录对账只兜两者都没覆盖到的缺口。
+func ensureCatalogMissingRules(tx *gorm.DB) error {
+	var standards []models.InsightSQLStandard
+	if err := tx.Find(&standards).Error; err != nil {
+		return err
+	}
+	catalog := defaultStandardRules()
+	for _, st := range standards {
+		var existingKeys []string
+		if err := tx.Model(&models.InsightSQLStandardRule{}).
+			Where("standard_id = ?", st.ID).
+			Pluck("rule_key", &existingKeys).Error; err != nil {
+			return err
+		}
+		if len(existingKeys) == 0 {
+			continue // 空规范由上面的播种逻辑负责，避免两边同时写入
+		}
+		have := make(map[string]struct{}, len(existingKeys))
+		for _, k := range existingKeys {
+			have[k] = struct{}{}
+		}
+		missing := make([]models.InsightSQLStandardRule, 0, len(catalog))
+		for _, r := range catalog {
+			if _, ok := have[r.RuleKey]; ok {
+				continue
+			}
+			baseLevel := r.BaseLevel
+			if baseLevel == "" {
+				baseLevel = r.Level
+			}
+			missing = append(missing, models.InsightSQLStandardRule{
+				StandardID:  st.ID,
+				RuleKey:     r.RuleKey,
+				Category:    r.Category,
+				RuleType:    NormalizeRuleType(r.RuleKey, r.Name, r.RuleType),
+				DbType:      r.DbType,
+				Name:        r.Name,
+				Description: r.Description,
+				BaseLevel:   baseLevel,
+				Level:       seedLevelForEnv(baseLevel, st.EnvType),
+				Params:      r.Params,
+				SortOrder:   r.SortOrder,
+				Implemented: r.Implemented,
+			})
+		}
+		if len(missing) > 0 {
+			if err := tx.CreateInBatches(&missing, 100).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ensureKingbaseRules 为已有规范补齐金仓规则段（幂等）。
+//
+// 以该规范自己的 postgres 段为模板：级别、参数、排序完全跟随（金仓与 PG 同一套判定），
+// 分类/类型/名称/描述逐字段复制。已经存在 kingbase.* 条目的规范直接跳过，
+// 因此重复启动/多次执行不会产生重复规则，也不会覆盖管理员对金仓段的独立调整。
+func ensureKingbaseRules(tx *gorm.DB) error {
+	var standardIDs []uint64
+	if err := tx.Model(&models.InsightSQLStandard{}).Pluck("id", &standardIDs).Error; err != nil {
+		return err
+	}
+	for _, standardID := range standardIDs {
+		var total, kingbaseCount int64
+		tx.Model(&models.InsightSQLStandardRule{}).Where("standard_id = ?", standardID).Count(&total)
+		if total == 0 {
+			continue // 空规范交给上面的播种逻辑，避免两边同时写入
+		}
+		tx.Model(&models.InsightSQLStandardRule{}).
+			Where("standard_id = ? AND db_type = ?", standardID, "kingbase").
+			Count(&kingbaseCount)
+		if kingbaseCount > 0 {
+			continue
+		}
+		var pgRules []models.InsightSQLStandardRule
+		if err := tx.Where("standard_id = ? AND db_type = ?", standardID, "postgres").Find(&pgRules).Error; err != nil {
+			return err
+		}
+		if len(pgRules) == 0 {
+			continue // 该规范的 PG 段被整体移除，无从镜像
+		}
+		cloned := kingbaseRulesFromPostgres(pgRules)
+		rows := make([]models.InsightSQLStandardRule, 0, len(cloned))
+		for _, r := range cloned {
+			// 显式构造新记录：不能复用模板行的 Model（ID 非空会被当成更新，
+			// 而且多个标准共用同一个指针会互相覆盖）。
+			// Level / BaseLevel / Params 沿用模板：金仓段初始值与 PG 段保持一致，
+			// 之后可在规范页独立调整（applyStandardRule 把 kingbase.* 映射到同一组引擎参数）。
+			rows = append(rows, models.InsightSQLStandardRule{
+				StandardID:  standardID,
+				RuleKey:     r.RuleKey,
+				Category:    r.Category,
+				RuleType:    NormalizeRuleType(r.RuleKey, r.Name, r.RuleType),
+				DbType:      "kingbase",
+				Name:        r.Name,
+				Description: r.Description,
+				BaseLevel:   r.BaseLevel,
+				Level:       r.Level,
+				Params:      r.Params,
+				SortOrder:   r.SortOrder,
+				Implemented: r.Implemented,
+			})
+		}
+		if err := tx.CreateInBatches(&rows, 100).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // BuildInspectParamsForInstance 根据实例绑定的 SQL 开发规范生成 InspectParams。
@@ -606,18 +742,28 @@ func resolveInstanceStandard(instanceID string) (standardID uint64, dbType strin
 }
 
 // normalizeRuleDbType 把实例的数据源类型归一化为规范规则使用的类型标识。
-// 实例表存的是 MySQL/PostgreSQL/TiDB/Doris，规范规则目录用的是 mysql/postgres/oracle/tidb。
+// 实例表存的是 MySQL/PostgreSQL/TiDB/Doris/SQLServer，规范规则目录用的是
+// mysql/postgres/oracle/tidb/sqlserver。
 // 归一化属于「参数是否属于当前数据源」这一判定维度的一部分。
 func normalizeRuleDbType(dbType string) string {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
 	case "postgresql", "pg":
 		return "postgres"
+	case "kingbase", "kingbasees", "kingbase es", "kingbase-es":
+		// 金仓兼容 PG 方言：引擎复用 PG 解析链，规范目录单独成段（standard_seed_kingbase.go）
+		// 以便在规范页里独立配置。存量库若还没补种 kingbase 规则，loadStandardRules 会
+		// 自动回退到 postgres 段（见该函数注释），不会出现「绑了规范却零规则」。
+		return "kingbase"
 	case "tidb":
 		// TiDB 有独立规范目录（db_type=tidb，逐条镜像 mysql 段），便于按数据库类型单独配置
 		return "tidb"
 	case "doris":
 		// Doris 暂无独立目录，复用 mysql 规则（MySQL 协议 + MySQL 方言）
 		return "mysql"
+	case "sqlserver", "sql server", "mssql", "microsoft sql server":
+		// 实例表里存的字面值是 `SQLServer`；页面/SQL 里也出现过 `SQL Server`、`MSSQL` 等写法，
+		// 一并归一，否则这些实例会拿不到 SQLServer 段规则（表现为「规范配了但不生效」）。
+		return "sqlserver"
 	default:
 		return strings.ToLower(strings.TrimSpace(dbType))
 	}
@@ -632,8 +778,20 @@ func loadStandardRules(standardID uint64, dbType string) []models.InsightSQLStan
 		return nil
 	}
 	dbTypeLower := strings.ToLower(dbType)
-	rules := make([]models.InsightSQLStandardRule, 0, len(dbRules))
-	for _, rule := range dbRules {
+	rules := filterRulesByDbType(dbRules, dbTypeLower)
+	// 金仓兜底：规范里还没有 kingbase 段（存量库未补种、或规范是金仓上量之前创建的）时，
+	// 退回 postgres 段。金仓与 PG 是同一套判定语义，回退只会「按 PG 规则审」，
+	// 不会像零规则那样静默退化成引擎默认参数（那才是真正难查的「规范绑了不生效」）。
+	if len(rules) == 0 && strings.EqualFold(dbTypeLower, "kingbase") {
+		rules = filterRulesByDbType(dbRules, "postgres")
+	}
+	return rules
+}
+
+// filterRulesByDbType 按「all 通配 + 指定库」筛出规则，保持库内原顺序。
+func filterRulesByDbType(all []models.InsightSQLStandardRule, dbTypeLower string) []models.InsightSQLStandardRule {
+	rules := make([]models.InsightSQLStandardRule, 0, len(all))
+	for _, rule := range all {
 		if rule.DbType != "all" && rule.DbType != dbTypeLower {
 			continue
 		}
@@ -820,11 +978,64 @@ func charsetsToSupportCharset(charsets []string) []map[string]string {
 // 四个判定维度在这里落地的是「级别」与「是否开启」：level == off 表示关闭，
 // must/suggest 表示开启；规则不存在或数据源不匹配时该规则压根不会被加载（见 loadStandardRules），
 // 对应参数保持 config.DefaultInspectParams 的内置默认值。
+//
+// SQLServer / Kingbase 通过 standardRuleKeyAlias 复用 mysql.* / postgres.* 的参数映射分支：
+// 72 条规则与 MySQL 段是「同一能力项、同一参数语义」，只是语法实现不同（引擎不同），
+// 因此不需要为每条规则再加一份 `sqlserver.*` case —— 那会让 50 多个 case 行成倍膨胀，
+// 且两边一旦改漏就会静默失效。数据库专属差异（如禁用类型默认清单）由 rule.DbType 分支补齐。
+// standardRuleKeyAlias 把 `sqlserver.*` 规则键归一到 `mysql.*` 同一能力项的键上。
+//
+// 归一化让 SQL Server 段直接复用 applyStandardRule 里既有的 50 多个 case 分支：
+// 两边是同一能力项、同一引擎参数语义，只有「引擎怎么判定」不同。好处是
+// MySQL 段新增/调整一条规则的参数映射时 SQL Server 自动同步，不会因为漏改一处分行而静默失效。
+//
+// 归一化只做前缀替换，不改后缀：`sqlserver.struct.limit_tbl_name_case` →
+// `mysql.struct.limit_tbl_name_case`。SQL Server 目录里刻意不收录 MySQL/TiDB 独占的
+// 能力项（UNSIGNED / 存储引擎 / 字符集 / ZEROFILL / EVENT / CTL），因此不会出现
+// 「归一后命中一个 SQL Server 上不适用的分支」。
+func standardRuleKeyAlias(ruleKey string) string {
+	if strings.HasPrefix(ruleKey, "sqlserver.") {
+		return "mysql." + strings.TrimPrefix(ruleKey, "sqlserver.")
+	}
+	// 金仓段是 postgres 段的镜像（同一能力项、同一参数语义、同一套引擎），
+	// 别名到 postgres.* 复用既有 60 多个 case 分支：PG 段新增/调整参数映射时
+	// 金仓自动同步，不会因为漏写一条 kingbase.* case 而静默失效。
+	if strings.HasPrefix(ruleKey, "kingbase.") {
+		return "postgres." + strings.TrimPrefix(ruleKey, "kingbase.")
+	}
+	return ruleKey
+}
+
+// applySQLServerExclusiveRule 映射 SQLServer 段独有的能力类规则，返回是否已处理。
+//
+// 这三条规则在既有四个数据库的段里只有目录条目、引擎从不判定（页面能配级别但永不触发），
+// 归一化到 mysql.* 会命中不存在的 case 而静默失效。SQL Server 引擎实现了它们，
+// 因此在这里单独映射到独立参数，语义与其他「禁止…操作」规则保持一致：规则开启 => 禁止。
+func applySQLServerExclusiveRule(params *config.InspectParams, ruleKey string, on bool) bool {
+	switch ruleKey {
+	case "sqlserver.struct.disable_proc_related_op":
+		params.ENABLE_PROCEDURE_OBJECT = !on
+	case "sqlserver.struct.disable_custom_function_related_op":
+		params.ENABLE_FUNCTION_OBJECT = !on
+	case "sqlserver.struct.disable_trigger_related_op":
+		params.ENABLE_TRIGGER_OBJECT = !on
+	default:
+		return false
+	}
+	return true
+}
+
 func applyStandardRule(params *config.InspectParams, rule models.InsightSQLStandardRule) {
 	on := rule.Level != "off" // 级别 + 是否开启
 	rp := parseStandardRuleParams(rule.Params)
 
-	switch rule.RuleKey {
+	// SQLServer 独有能力项先处理：这些规则在 MySQL/TiDB/PG/Oracle 段里只有目录、没有引擎判定，
+	// 归一化到 mysql.* 会命中不存在的 case（静默失效），所以单独映射。
+	if applySQLServerExclusiveRule(params, rule.RuleKey, on) {
+		return
+	}
+
+	switch standardRuleKeyAlias(rule.RuleKey) {
 	// ---------- 表 ----------
 	case "mysql.struct.table_must_have_pk", "tidb.struct.table_must_have_pk", "postgres.struct.table_must_have_pk", "oracle.struct.table_must_have_pk":
 		params.CHECK_TABLE_PRIMARY_KEY = on
@@ -992,10 +1203,14 @@ func applyStandardRule(params *config.InspectParams, rule models.InsightSQLStand
 		if on {
 			params.COLUMN_FORBIDDEN_TYPES = rp.ForbiddenTypes
 			if params.COLUMN_FORBIDDEN_TYPES == nil {
-				// 规则开启但未配置类型列表时，回退到默认列表（Oracle 无 enum/bit/set，回退其淘汰类型）
-				if strings.EqualFold(rule.DbType, "oracle") {
+				// 规则开启但未配置类型列表时，回退到默认列表：
+				// Oracle 无 enum/bit/set，回退其淘汰类型；SQL Server 回退已废弃/易误用类型。
+				switch {
+				case strings.EqualFold(rule.DbType, "oracle"):
 					params.COLUMN_FORBIDDEN_TYPES = []string{"long", "long raw"}
-				} else {
+				case strings.EqualFold(rule.DbType, "sqlserver"):
+					params.COLUMN_FORBIDDEN_TYPES = []string{"text", "ntext", "image", "sql_variant", "timestamp", "money", "smallmoney"}
+				default:
 					params.COLUMN_FORBIDDEN_TYPES = []string{"double", "float", "enum", "bit", "set"}
 				}
 			}
@@ -1113,11 +1328,14 @@ func applyStandardRule(params *config.InspectParams, rule models.InsightSQLStand
 	case "mysql.query_update.update_delete_stmt_where_subquery_check", "tidb.query_update.update_delete_stmt_where_subquery_check",
 		"postgres.query_update.update_delete_stmt_where_subquery_check":
 		params.DML_DISABLE_SUBQUERY = on
-	case "mysql.query_update.limit_update_delete_data_size", "tidb.query_update.limit_update_delete_data_size", "oracle.query_update.limit_update_delete_data_size":
+	case "mysql.query_update.limit_update_delete_data_size", "tidb.query_update.limit_update_delete_data_size",
+		"postgres.query_update.limit_update_delete_data_size",
+		"oracle.query_update.limit_update_delete_data_size":
 		// 语义（2026-09-29 调整）：由「禁止任何 LIMIT」改为「LIMIT 行数超过阈值才告警」。
 		// 规则开启 => DML_MAX_LIMIT_ROWS = 配置值（默认 5）；规则关闭 => 0（不限制）。
 		// DML_DISABLE_LIMIT 不再由该规则设置（历史参数保留，避免影响其它引用点）。
-		// Oracle 不支持 LIMIT 语法（引擎出现 LIMIT 即报 ORA-00933），规则仅作为能力开关存在。
+		// Oracle/PG 的 UPDATE/DELETE 语法本身不支持 LIMIT（直接写会报语法错），
+		// 引擎侧按「出现 LIMIT 即报」或 CTE 包裹限量写法的行数解析各自落地。
 		if on {
 			params.DML_MAX_LIMIT_ROWS = firstPositive(rp.LimitMaxRows, defaultDMLLimitRows)
 		} else {
@@ -1171,7 +1389,9 @@ func applyStandardRule(params *config.InspectParams, rule models.InsightSQLStand
 		"postgres.query_update.update_delete_stmt_join_on_check",
 		"oracle.query_update.update_delete_stmt_join_on_check":
 		params.CHECK_DML_JOIN_WITH_ON = on
-	case "mysql.query_update.limit_update_delete_affected_rows", "tidb.query_update.limit_update_delete_affected_rows", "oracle.query_update.limit_update_delete_affected_rows":
+	case "mysql.query_update.limit_update_delete_affected_rows", "tidb.query_update.limit_update_delete_affected_rows",
+		"postgres.query_update.limit_update_delete_affected_rows",
+		"oracle.query_update.limit_update_delete_affected_rows":
 		if on {
 			params.MAX_AFFECTED_ROWS = firstPositive(rp.MaxAffectedRows, defaultMaxAffectedRows)
 		} else {

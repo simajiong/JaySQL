@@ -83,9 +83,11 @@ func stripPGStringsAndComments(s string) string {
 
 // pgDMLAnalysis DML 语句的文本级结构分析
 type pgDMLAnalysis struct {
-	Kind            string // insert / update / delete
-	Table           string
-	HasWhere        bool
+	Kind     string // insert / update / delete
+	Table    string
+	// TableSchema 语句显式指定的 schema（如 update sch.t；未限定为空，走工单 InspectSchema）
+	TableSchema string
+	HasWhere      bool
 	WhereSubquery   bool
 	JoinMissingOn   bool
 	InsertValueRows int
@@ -97,6 +99,9 @@ type pgDMLAnalysis struct {
 	JoinTableCount int
 	// LimitRows UPDATE/DELETE 语句 LIMIT 的常量行数（无 LIMIT 或无法解析时为 0）
 	LimitRows int
+	// WhereClause UPDATE/DELETE 的 WHERE 条件原文（到 order by / limit / returning 为止；
+	// 供预审阶段做影响行数估算，规则 limit_update_delete_affected_rows）。无 WHERE 时为空。
+	WhereClause string
 	// UpdateSetColumns UPDATE 语句 SET 子句的列名（小写）
 	UpdateSetColumns []string
 	// MaxInElements WHERE 条件中 IN 列表的最大元素个数（无 IN 时为 0）
@@ -149,10 +154,23 @@ func analyzePGDML(stmt string) pgDMLAnalysis {
 	nameToken = strings.Trim(nameToken, `"`)
 	if id, ok := parsePGQualifiedName(nameToken); ok {
 		res.Table = id.Name
+		res.TableSchema = id.Schema
 	}
 
 	whereIdx := indexOfKeyword(clean, "where")
 	res.HasWhere = whereIdx >= 0
+	if res.HasWhere {
+		// WHERE 条件原文：到 order by / limit / returning / for update 为止
+		// （COUNT 用；供预审阶段做影响行数估算）
+		after := clean[whereIdx+len("where"):]
+		for _, tail := range []string{"order by", "limit", "returning", "for update"} {
+			if i := indexOfKeyword(after, tail); i >= 0 {
+				after = after[:i]
+			}
+		}
+		res.WhereClause = strings.TrimSpace(after)
+	}
+
 	if res.HasWhere {
 		after := clean[whereIdx+len("where"):]
 		lowerAfter := strings.ToLower(after)
@@ -259,8 +277,9 @@ func pgWordTokens(s string) []string {
 }
 
 // pgDMLJoinTableCount 统计 UPDATE/DELETE 参与操作的表数量（含主表）。
-// UPDATE：主表 + 表名到 SET 之间的 join 数；DELETE：from 表 + using/join 数。
-// 仅做文本级统计，跨子查询场景按保守口径计数。
+// UPDATE：主表 + 表名到 SET 之间的 join 数 + PG 专有的 `SET ... FROM t2[, t3]` 表数；
+// DELETE：from 表 + using/join 数。
+// 仅做文本级统计，跨子查询场景按保守口径计数（FROM 出现在括号内时不计）。
 func pgDMLJoinTableCount(clean, kind string) int {
 	lower := strings.ToLower(clean)
 	var span string
@@ -291,7 +310,49 @@ func pgDMLJoinTableCount(clean, kind string) int {
 	for _, kw := range []string{" join ", " using ", ","} {
 		count += strings.Count(span, kw)
 	}
+	if kind == "update" {
+		// PG 的多表 UPDATE 写成 `UPDATE t SET ... FROM t2, t3 WHERE ...`：
+		// 主表之后还有 FROM 子句，其表数必须计入，否则「多表关联」类规则整体失效。
+		if fromIdx := pgTopLevelFromIndex(clean); fromIdx >= 0 {
+			seg := lower[fromIdx+len("from"):]
+			for _, kw := range []string{" where ", " limit ", " returning ", " order by "} {
+				if i := strings.Index(seg, kw); i >= 0 {
+					seg = seg[:i]
+				}
+			}
+			add := 1 + strings.Count(seg, ",") + strings.Count(seg, " join ")
+			count += add
+		}
+	}
 	return count
+}
+
+// pgTopLevelFromIndex 返回括号外第一个 `from` 关键字的起始下标（找不到返回 -1）。
+// 用于区分 `UPDATE ... SET ... FROM t2` 与 `SET x = (SELECT ... FROM y)`。
+func pgTopLevelFromIndex(clean string) int {
+	lower := strings.ToLower(clean)
+	depth := 0
+	for i := 0; i+4 <= len(lower); i++ {
+		switch lower[i] {
+		case '(':
+			depth++
+			continue
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			continue
+		}
+		if depth != 0 || lower[i:i+4] != "from" {
+			continue
+		}
+		leftOK := i == 0 || !isPGWordByte(lower[i-1])
+		rightOK := i+4 == len(lower) || !isPGWordByte(lower[i+4])
+		if leftOK && rightOK {
+			return i
+		}
+	}
+	return -1
 }
 
 // pgDMLLimitRows 提取 UPDATE/DELETE 语句 LIMIT 的常量行数（无 LIMIT 或非纯数字时为 0）

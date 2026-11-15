@@ -16,10 +16,12 @@ import (
 	"github.com/simajiong/jaysql/pkg/utils"
 
 	commonModels "github.com/simajiong/jaysql/internal/common/models"
+	commonTasks "github.com/simajiong/jaysql/internal/common/tasks"
 	dasServices "github.com/simajiong/jaysql/internal/das/services"
 	"github.com/simajiong/jaysql/internal/inspect/checker"
 	"github.com/simajiong/jaysql/internal/orders/forms"
 	"github.com/simajiong/jaysql/internal/orders/models"
+	orderScopes "github.com/simajiong/jaysql/internal/orders/scopes"
 	usersModels "github.com/simajiong/jaysql/internal/users/models"
 
 	"github.com/gin-gonic/gin"
@@ -84,9 +86,10 @@ func (s *GetOrderDataSourcesService) Run() (responseData interface{}, total int6
 	tx := global.App.DB.Table("insight_instances a").
 		Select("a.id, a.instance_id, a.remark, a.hostname, a.port, a.db_type, a.environment, b.name as environment_name, a.last_checked_at, a.last_check_status, a.last_check_message").
 		Joins("left join insight_instance_environments b on a.environment = b.id")
-	// 工单数据源候选：与 validateOrderSQLTypeSupport / 执行器支持范围保持一致
-	// （MySQL 系 = MySQL/TiDB/Doris；PG；Oracle）
-	tx = tx.Where("a.db_type in ?", []string{"MySQL", "PostgreSQL", "Oracle", "TiDB", "Doris"})
+	// 工单数据源候选：直接引用工单支持的库类型白名单（scopes.SupportedOrderDbTypes），
+	// 不再本地另写一份。历史 bug：这里漏了 Kingbase，金仓实例在「新建工单 → 数据源」
+	// 下拉里显示「暂无数据」，而工单列表侧的白名单也各少一份，导致建好的单凭空消失。
+	tx = tx.Where("a.db_type in ?", orderScopes.SupportedOrderDbTypes)
 	tx = tx.Order("b.name asc, a.db_type asc, a.remark asc, a.hostname asc, a.port asc")
 	total = pagination.Pager(&s.PaginationQ, tx, &dataSources)
 	return &dataSources, total, nil
@@ -113,6 +116,11 @@ func (s *GetOrderSchemasService) Run() (responseData interface{}, total int64, e
 	//   - 但系统库（information_schema / mysql / sys / pg_catalog …）不进入工单视野：
 	//     下拉对非 admin 隐藏，与提交校验（rejectOrderSystemTarget）同一口径。
 	// 过滤必须下推到 SQL：分页计数若不含过滤，会出现「total 100 条、翻页全是空页」。
+	//
+	// 2026-11-09 读时惰性刷新：建库成功后平台会主动失效该实例快照，
+	// 但「DBA 用客户端直接建库」这类变更平台无感知，所以读之前补一道 TTL 校验。
+	// 这里只是异步触发，不等待结果，接口耗时不受影响。
+	commonTasks.EnsureFresh(s.InstanceID)
 	var roles []commonModels.InsightInstanceSchemas
 	tx := global.App.DB.Table("insight_instance_schemas").Where("instance_id=? and is_deleted=0", s.InstanceID)
 	if s.ParentPath != "" {
@@ -214,9 +222,23 @@ type CreateOrderService struct {
 	Audit    *parser.TiStmt
 }
 
+// isPgLikeDB schema 与 database 分离的库类型（PG / 金仓 / SQL Server）。
+// 注意别只按 parser 口径理解：inspectConnTarget / operate / execute_tasks
+// 都靠它区分「库字段、schema 字段是否独立维护」。
 func isPgLikeDB(dbType string) bool {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
-	case "postgresql", "postgres", "sqlserver":
+	case "postgresql", "postgres", "kingbase", "kingbasees", "sqlserver":
+		return true
+	default:
+		return false
+	}
+}
+
+// isSQLServerDB SQL Server（含别名 MSSQL）走独立拆分链路：
+// T-SQL 方言不适用 TiDB parser，且需剥离 GO 批处理分隔符（order_plan.go）
+func isSQLServerDB(dbType string) bool {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "sqlserver", "mssql":
 		return true
 	default:
 		return false

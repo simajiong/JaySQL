@@ -75,21 +75,30 @@ func (s *SyntaxInspectService) runPGInspect() ([]ReturnData, error) {
 		indexByTable: map[string][]*pgIndexDef{},
 		meta:         s.pgMeta,
 	}
-	ctx.collect(stmts)
+	// 语句文本归一：展示用原文（clean），解析用折叠空白的文本（parsed）。
+	// 引擎全部规则都是文本匹配实现，不归一会让 `create  table  t(...)` 这类多空白写法
+	// 解析失败、整条语句零结论（见 collapseSQLWhitespace 注释）。
+	cleans := make([]string, len(stmts))
+	parsed := make([]string, len(stmts))
+	for i, stmt := range stmts {
+		cleans[i] = strings.TrimSpace(sqlsplit.StripLeadingComments(stmt))
+		parsed[i] = collapseSQLWhitespace(cleans[i])
+	}
+	ctx.collect(parsed)
 
 	returnData := make([]ReturnData, 0, len(stmts))
 	// 同表多条 ALTER：与 MySQL 引擎一致，在整段 SQL 层面汇总后给出合并建议
 	var alterTables []string
-	for i, stmt := range stmts {
+	for i := range stmts {
 		// 与 MySQL 引擎口径一致：Query 展示语句本体（不含前导注释），行号指向语句起始行
-		clean := strings.TrimSpace(sqlsplit.StripLeadingComments(stmt))
+		clean := cleans[i]
 		data := ReturnData{
 			FingerId: "",
 			Query:    clean,
 			Type:     types[i],
 			Line:     s.computeLine(clean),
 		}
-		if act, ok := parseAlterTableActions(clean); ok && strings.TrimSpace(act.Table) != "" {
+		if act, ok := parseAlterTableActions(parsed[i]); ok && strings.TrimSpace(act.Table) != "" {
 			// 归并键：显式限定了「非工单 schema」时按 `schema.table` 区分（不同模式下的
 			// 同名表是不同的表，混在一起会给出错误的合并建议）；限定到工单 schema 或
 			// 未限定 schema 时一律用表名，避免 `public.t` 与 `t` 被当成两张表而漏报。
@@ -99,7 +108,7 @@ func (s *SyntaxInspectService) runPGInspect() ([]ReturnData, error) {
 			}
 			alterTables = append(alterTables, key)
 		}
-		data.Summary = ctx.inspectStatement(clean, types[i])
+		data.Summary = ctx.inspectStatement(parsed[i], types[i])
 		returnData = append(returnData, data)
 	}
 	if data := ctx.mergeAlterSummary(alterTables); len(data.Summary) > 0 {
@@ -733,6 +742,7 @@ func (c *pgInspectContext) secondaryIndexPrefix() string {
 
 // ---------- DML ----------
 
+// inspectDML 单条 DML 语句的规则链
 func (c *pgInspectContext) inspectDML(stmt string) []controllers.SummaryItem {
 	res := analyzePGDML(stmt)
 	if !res.OK {
@@ -776,6 +786,17 @@ func (c *pgInspectContext) inspectDML(stmt string) []controllers.SummaryItem {
 			items = append(items, pgSummary("limit_where_in_element_count",
 				"WHERE 条件中 `IN` 子句元素过多：最多允许 %d 个，当前 %d 个（表`%s`）",
 				c.params.MAX_WHERE_IN_ELEMENTS, res.MaxInElements, table))
+		}
+		// 影响行数估算：对同条件做 COUNT(*)（规则 limit_update_delete_affected_rows）。
+		// 连库失败 / 无 WHERE（无 WHERE 已被上一条规则拦截）时跳过，与 Oracle/SQLServer 同口径。
+		// 走 metaResolver 桩接口：单测可注入计数桩覆盖命中/跳过两条路径（此前直连 c.db 从未被单测验证）。
+		if c.params.MAX_AFFECTED_ROWS > 0 && res.HasWhere && strings.TrimSpace(res.WhereClause) != "" &&
+			strings.TrimSpace(res.Table) != "" {
+			if n, err := c.metaResolverFor(res.TableSchema).CountWhere(res.Table, res.TableSchema, res.WhereClause); err == nil && n > int64(c.params.MAX_AFFECTED_ROWS) {
+				items = append(items, pgSummary("limit_update_delete_affected_rows",
+					"%s 语句影响行数（约 %d）超过上限 %d（表`%s`），请缩小 WHERE 条件范围或拆分批次",
+					strings.ToUpper(res.Kind), n, c.params.MAX_AFFECTED_ROWS, res.Table))
+			}
 		}
 		// UPDATE 建议同步更新「修改时间」列（规则 update_stmt_suggest_update_time_column）
 		if res.Kind == "update" && strings.TrimSpace(c.params.UPDATE_TIME_COLUMNS) != "" {
@@ -852,6 +873,10 @@ func (c *pgInspectContext) inspectDML(stmt string) []controllers.SummaryItem {
 			}
 		}
 	}
+	// 补齐的 15 条 DML 规则（WHERE 类 / SET 分隔符 / 多表前缀 / 主键与唯一键 /
+	// 列存在性 / INSERT 字段重复、未指定字段列表、NOT NULL 插 NULL、SYSDATE() /
+	// DELETE 表存在性）。传原始语句：LIKE 字面量需要保留引号内内容。
+	items = append(items, c.inspectPGDMLTextRules(stmt, stripPGStringsAndComments(stmt), res)...)
 	return items
 }
 
@@ -960,6 +985,30 @@ func (c *pgInspectContext) tableHasCommentInDB(table string) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// pgCountWhere 对目标表按给定 WHERE 条件做 COUNT(*)，估算 UPDATE/DELETE 影响行数
+// （规则 limit_update_delete_affected_rows，与 Oracle/SQLServer 的 CountWhere 同口径）。
+// 表名/schema 来自语句解析结果（parsePGQualifiedName），双引号包裹并转义后拼接；
+// WHERE 条件原文来自用户语句本身，在只读预审连接上执行。查询失败由调用方跳过、不误报。
+func (c *pgInspectContext) pgCountWhere(table, schema, whereClause string) (int64, error) {
+	if c.db == nil {
+		return 0, fmt.Errorf("未初始化数据库连接")
+	}
+	qualified := pgQuoteIdent(table)
+	if s := strings.TrimSpace(schema); s != "" {
+		qualified = pgQuoteIdent(s) + "." + qualified
+	}
+	n, err := c.countQuery(fmt.Sprintf("SELECT COUNT(*) AS count FROM %s WHERE %s", qualified, whereClause))
+	if err != nil {
+		return 0, err
+	}
+	return int64(n), nil
+}
+
+// pgQuoteIdent PG 标识符引用：双引号包裹并转义内部双引号
+func pgQuoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(strings.TrimSpace(s), `"`, `""`) + `"`
 }
 
 // countQuery 执行 COUNT 查询并取出结果（列名固定 count）

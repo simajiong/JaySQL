@@ -5,7 +5,9 @@ import "github.com/simajiong/jaysql/internal/inspect/models"
 // defaultStandardRules 返回从 MySQL/Postgres 开发规范.md 解析出的规则目录
 // 按结构(structure)与查询更新(query_update)分类，规则 key 全局唯一
 func defaultStandardRules() []models.InsightSQLStandardRule {
-	return []models.InsightSQLStandardRule{
+	// SQLServer 段单独成文件（standard_seed_sqlserver.go）：82 个能力后缀里只有 72 条
+	// 在 SQL Server 上有等价语义，逐条带上 Description 的 T-SQL 口径说明，体量大且自成一类。
+	rules := []models.InsightSQLStandardRule{
 		{
 			RuleKey:     "mysql.struct.limit_auto_inc_col_name_is_id",
 			Category:    "structure",
@@ -1300,6 +1302,32 @@ func defaultStandardRules() []models.InsightSQLStandardRule {
 			BaseLevel:   "suggest",
 			Level:       "suggest",
 			Params:      []byte(`{"max_join_tables":5}`),
+			SortOrder:   115,
+			Implemented: true,
+		},
+		{
+			RuleKey:     "postgres.query_update.limit_update_delete_affected_rows",
+			Category:    "query_update",
+			RuleType:    "更新",
+			DbType:      "postgres",
+			Name:        "UPDATE/DELETE 单语句影响行数",
+			Description: "大批量更新删除会拖长事务时间、占用大量存储并加剧锁竞争，回滚代价高",
+			BaseLevel:   "suggest",
+			Level:       "suggest",
+			Params:      []byte(`{"max_affected_rows":10000}`),
+			SortOrder:   115,
+			Implemented: true,
+		},
+		{
+			RuleKey:     "postgres.query_update.limit_update_delete_data_size",
+			Category:    "query_update",
+			RuleType:    "更新",
+			DbType:      "postgres",
+			Name:        "UPDATE/DELETE 语句 LIMIT 的行数",
+			Description: "限制单次数据量可缩短锁持有时间，降低对性能的影响",
+			BaseLevel:   "suggest",
+			Level:       "suggest",
+			Params:      []byte(`{"max_limit_rows":5}`),
 			SortOrder:   115,
 			Implemented: true,
 		},
@@ -3674,4 +3702,8 @@ func defaultStandardRules() []models.InsightSQLStandardRule {
 			Implemented: true,
 		},
 	}
+	rules = append(rules, sqlserverStandardRules()...)
+	// 金仓段按 postgres 段镜像生成（见 standard_seed_kingbase.go）：
+	// 引擎复用 PG 解析链，目录单独成段以便在规范页独立配置。
+	return append(rules, kingbaseRulesFromPostgres(rules)...)
 }

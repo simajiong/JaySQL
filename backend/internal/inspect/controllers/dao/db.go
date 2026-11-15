@@ -10,6 +10,9 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/microsoft/go-mssqldb"
+
+	"github.com/simajiong/jaysql/internal/common/sqlserverdsn"
 )
 
 // DB Struct
@@ -25,7 +28,18 @@ type DB struct {
 
 func (d *DB) isPostgres() bool {
 	switch strings.ToLower(strings.TrimSpace(d.DbType)) {
-	case "postgres", "postgresql", "pg":
+	case "postgres", "postgresql", "pg",
+		// 金仓兼容 PG 协议：pgx 驱动、url 形式的 DSN、当前库/字符集查询全部通用
+		"kingbase", "kingbasees":
+		return true
+	}
+	return false
+}
+
+// isSQLServer 判断是否按 SQL Server 协议连接（实例表存的字面值是 `SQLServer`）。
+func (d *DB) isSQLServer() bool {
+	switch strings.ToLower(strings.TrimSpace(d.DbType)) {
+	case "sqlserver", "sql server", "mssql":
 		return true
 	}
 	return false
@@ -36,7 +50,22 @@ func (d *DB) Open() (*sql.DB, error) {
 	if d.isPostgres() {
 		return d.openPostgres()
 	}
+	if d.isSQLServer() {
+		return d.openSQLServer()
+	}
 	return d.openMySQL()
+}
+
+// openSQLServer 建立 SQL Server 连接。
+//
+// DSN 统一由 sqlserverdsn 构建：必须带 tlsmin=1.0，否则 SQL Server 2012 等只支持 TLS 1.0
+// 的老版本会握手失败（tls: server selected unsupported protocol version 301）。
+// 超时口径与 MySQL/PG 一致：连接 3s；语句级超时由参数 context 控制，这里不额外设置。
+func (d *DB) openSQLServer() (*sql.DB, error) {
+	dsn := sqlserverdsn.DSN(d.User, d.Password, d.Host, d.Port, d.Database)
+	db, err := sql.Open("sqlserver", dsn)
+	db.SetMaxOpenConns(1)
+	return db, err
 }
 
 func (d *DB) openMySQL() (*sql.DB, error) {

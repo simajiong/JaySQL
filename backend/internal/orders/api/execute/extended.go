@@ -14,6 +14,7 @@ import (
 	go_ora "github.com/sijms/go-ora/v2"
 	"github.com/simajiong/jaysql/internal/common/sqlserverdsn"
 	"github.com/simajiong/jaysql/internal/orders/api/base"
+	"github.com/simajiong/jaysql/internal/orders/api/postgres"
 	"github.com/simajiong/jaysql/pkg/sqlsplit"
 	"github.com/simajiong/jaysql/pkg/utils"
 )
@@ -52,6 +53,13 @@ func (m *PostgresExecutor) Run() (data base.ReturnData, err error) {
 	if m.SQLType == "EXPORT" {
 		data.Error = "PostgreSQL 暂不支持导出工单"
 		return data, errors.New(data.Error)
+	}
+	// DML 走独立执行器：除执行本身外，还负责按条件生成精确回滚 SQL
+	// （逻辑解码方案，见 internal/orders/api/postgres 包注释）。DDL 无行级回滚，
+	// 维持本函数内直接执行。
+	if m.SQLType == "DML" {
+		execute := postgres.ExecutePostgresDML{DBConfig: m.DBConfig}
+		return execute.Run()
 	}
 	logger := base.NewExecuteLogger()
 	publisher := base.NewPublisher()

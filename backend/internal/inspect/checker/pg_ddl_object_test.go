@@ -25,6 +25,11 @@ type stubPGMeta struct {
 	tables  map[string]bool
 	columns map[string]map[string]bool
 	indexes map[string]bool
+	// CountWhere 桩：countValue 为桩返回的行数，countErr 非空模拟连库失败，
+	// countCalls 记录每次调用入参（断言下推是否正确）
+	countValue int64
+	countErr   error
+	countCalls []countWhereCall
 }
 
 func newStubPGMeta() *stubPGMeta {
@@ -58,6 +63,20 @@ func (s *stubPGMeta) ColumnExists(table, column string) (bool, error) {
 
 func (s *stubPGMeta) IndexExists(index string) (bool, error) {
 	return s.indexes[normalizePGIdent(index)], nil
+}
+
+// CountWhere 影响行数桩：count 值由用例注入；err 非空时模拟连库失败（规则应静默跳过）。
+// calls 记录调用入参，供断言「无 WHERE 不触发 / 表名与 WHERE 原文正确下推」。
+type countWhereCall struct {
+	table, schema, where string
+}
+
+func (s *stubPGMeta) CountWhere(table, schema, whereClause string) (int64, error) {
+	s.countCalls = append(s.countCalls, countWhereCall{table, schema, whereClause})
+	if s.countErr != nil {
+		return 0, s.countErr
+	}
+	return s.countValue, nil
 }
 
 // runPGWithMeta 带元信息桩执行 PG 预审

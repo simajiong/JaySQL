@@ -192,6 +192,13 @@ func summarizeOrderSQLType(plan OrderPlan) (string, error) {
 
 // splitOrderStatements 拆分语句并逐条识别类型
 func splitOrderStatements(content string, dbType string) ([]string, []string, error) {
+	if isSQLServerDB(dbType) {
+		// SQL Server：T-SQL 方言不能交给 TiDB parser，直接走语法感知拆分。
+		// ① GO 是客户端批处理分隔符（SSMS/sqlcmd），不是 T-SQL 语句，先剥离，
+		//    否则会单独或与后续语句粘成一条，报「无法识别类型」；
+		// ② EXEC 系列按 DDL 归类，与预审链路（inspect/checker）同口径。
+		return sqlsplit.SplitTypedExtra(sqlsplit.StripGoBatches(content), sqlsplit.TSQLExtraDDLPrefixes)
+	}
 	if isPgLikeDB(dbType) {
 		return sqlsplit.SplitTyped(content)
 	}

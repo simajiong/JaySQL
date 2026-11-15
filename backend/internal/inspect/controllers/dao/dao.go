@@ -22,6 +22,11 @@ func ShowCreateTable(table string, db *DB, kv *kv.KVCache) (data interface{}, er
 		// 在 PG 下降级跳过。调用方对该错误只 Warn 不中断，不影响其余规则检查。
 		return nil, fmt.Errorf("PostgreSQL 暂不支持读取表结构进行比对检查，该项规则已跳过")
 	}
+	if db.isSQLServer() {
+		// SQL Server 同样没有 SHOW CREATE TABLE（等价能力是脚本化生成 DDL，成本与语义都不同）：
+		// SQL Server 引擎走 sys.* 元信息探针做存在性/数量判定，不依赖表结构反解。
+		return nil, fmt.Errorf("SQL Server 暂不支持读取表结构进行比对检查，该项规则已跳过")
+	}
 	// Return table structure from cache if available
 	data = kv.Get(table)
 	if data != nil {

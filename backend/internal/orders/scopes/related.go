@@ -88,4 +88,20 @@ func RelatedCondition(username string) (string, []any) {
 // 两处口径必须一致——否则会出现「首页卡片 N 条 / 列表 M 条」的分裂。
 // 历史 bug：白名单曾硬编码 MySQL/PostgreSQL，Oracle/TiDB/Doris 工单能创建、
 // 能在详情页看到，却在列表里凭空消失。
-var SupportedOrderDbTypes = []string{"MySQL", "PostgreSQL", "Oracle", "TiDB", "Doris"}
+// 2026-11-11 补 Kingbase / SQLServer / MSSQL：金仓与 SQL Server 早已在
+// validateOrderSQLTypeSupport 与工单数据源下拉里放行，但这张白名单没跟上，
+// 结果是「能建单、能执行，列表页查不到」以及「数据源下拉里选不到实例」。
+// 现在候选下拉（commit.go）也直接引用本变量，避免第三份拷贝再漂移。
+var SupportedOrderDbTypes = []string{"MySQL", "PostgreSQL", "Kingbase", "Oracle", "TiDB", "Doris", "SQLServer", "MSSQL"}
+
+// SupportsOrderDbType 判断给定 db_type 是否在工单支持范围内。
+// 供审核/预审/执行链复用，避免在多处各写一份 switch（历史 bug：三份清单先后漏配）。
+func SupportsOrderDbType(dbType string) bool {
+	target := strings.TrimSpace(dbType)
+	for _, item := range SupportedOrderDbTypes {
+		if strings.EqualFold(item, target) {
+			return true
+		}
+	}
+	return false
+}

@@ -40,6 +40,9 @@ func NewExecuteSQLAPI(config *base.DBConfig) *ExecuteSQLAPI {
 		return &ExecuteSQLAPI{config, &TiDBExecutor{config}}
 	case "PostgreSQL":
 		return &ExecuteSQLAPI{config, &PostgresExecutor{config}}
+	case "Kingbase":
+		// 金仓兼容 PG 协议，执行器直接复用 PostgresExecutor（DSN/事务/结果集处理完全一致）
+		return &ExecuteSQLAPI{config, &PostgresExecutor{config}}
 	case "SQLServer":
 		return &ExecuteSQLAPI{config, &SQLServerExecutor{config}}
 	case "Oracle":

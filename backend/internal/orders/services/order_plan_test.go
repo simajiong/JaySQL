@@ -458,3 +458,59 @@ func TestOrderSQLTypeLabel(t *testing.T) {
 		t.Fatalf("DDL label = %q", got)
 	}
 }
+
+// TestBuildOrderPlanSQLServerGoBatch 用户真实场景：T-SQL 脚本带 GO 批处理分隔符
+// 与 EXEC sp_addextendedproperty。GO 不是 T-SQL 语句（SSMS/sqlcmd 客户端分隔符），
+// 提交链路必须先剥离；EXEC 系列按 DDL 归类（与预审链路同口径）。
+func TestBuildOrderPlanSQLServerGoBatch(t *testing.T) {
+	content := `-- 1. 创建表结构
+CREATE TABLE [dbo].[EmployeeInfo] (
+    [Id] INT IDENTITY(1,1) NOT NULL,
+    [EmpNo] VARCHAR(20) NOT NULL,
+    CONSTRAINT [PK_EmployeeInfo] PRIMARY KEY CLUSTERED ([Id] ASC)
+);
+GO
+
+-- 2. 为表和字段添加备注 (使用系统存储过程)
+EXEC sp_addextendedproperty
+    @name = N'MS_Description',
+    @value = N'公司员工基本信息表',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE',  @level1name = N'EmployeeInfo';
+GO`
+
+	plan, err := BuildOrderPlan(content, "SQLServer")
+	if err != nil {
+		t.Fatalf("BuildOrderPlan error: %v", err)
+	}
+	if len(plan.Statements) != 2 {
+		for i, st := range plan.Statements {
+			t.Logf("stmt %d: type=%s head=%q", i+1, st.SQLType, st.Text[:min(40, len(st.Text))])
+		}
+		t.Fatalf("应拆出 2 条语句，实际 %d 条", len(plan.Statements))
+	}
+	if plan.Statements[0].SQLType != "DDL" || plan.Statements[1].SQLType != "DDL" {
+		t.Fatalf("CREATE 与 EXEC 都应归为 DDL，实际 %s / %s",
+			plan.Statements[0].SQLType, plan.Statements[1].SQLType)
+	}
+	// GO 不应残留在任何语句里
+	for _, st := range plan.Statements {
+		if strings.EqualFold(strings.TrimSpace(strings.TrimLeft(st.Text, " \t\r\n-;")), "GO") {
+			t.Fatalf("GO 残留：%q", st.Text)
+		}
+	}
+}
+
+// TestBuildOrderPlanSQLServerGoN 独立验证 `GO n`（重复执行次数）写法被剥离，
+// 且纯 DDL 工单类型归纳不受影响。
+func TestBuildOrderPlanSQLServerGoN(t *testing.T) {
+	content := `INSERT INTO [dbo].[t_go] ([Id]) VALUES (1);
+GO 5`
+	plan, err := BuildOrderPlan(content, "SQLServer")
+	if err != nil {
+		t.Fatalf("BuildOrderPlan error: %v", err)
+	}
+	if len(plan.Statements) != 1 || plan.Statements[0].SQLType != "DML" {
+		t.Fatalf("应拆出 1 条 DML，实际 %d 条 / %v", len(plan.Statements), plan.Statements)
+	}
+}
