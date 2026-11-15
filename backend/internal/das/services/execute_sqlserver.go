@@ -87,5 +87,8 @@ func (s *ExecuteSQLServerQueryService) Run() (ResponseData, error) {
 	responseData.Duration = fmt.Sprintf("%dms", duration)
 	responseData.Data = data
 	responseData.Columns = columns
+	// 写后失效：CREATE/DROP DATABASE|SCHEMA 成功后立即重建该实例快照。
+	// SQLServer 一次同步要按库逐个连 sys.schemas，比其它引擎慢，这里尤其不能等定时任务。
+	NotifySchemaInventoryChanged(s.InstanceID, s.SQLText)
 	return responseData, nil
 }

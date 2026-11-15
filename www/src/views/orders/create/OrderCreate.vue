@@ -113,7 +113,7 @@
                       allow-clear
                       @change="handleDatabaseChange"
                     />
-                    <a-button class="icon-button" :disabled="!formState.instance_id || instanceUnavailable" @click="refreshDatabaseOptions">
+                    <a-button class="icon-button" :disabled="!formState.instance_id || instanceUnavailable" :loading="uiState.metaRefreshing" @click="refreshDatabaseOptions">
                       <template #icon>
                         <ReloadOutlined />
                       </template>
@@ -138,6 +138,7 @@
                     <a-button
                       class="icon-button"
                       :disabled="!formState.instance_id || !formState.database || !needsSchemaSelection || instanceUnavailable"
+                      :loading="uiState.metaRefreshing"
                       @click="refreshSchemaOptions"
                     >
                       <template #icon>
@@ -289,6 +290,7 @@
 
 <script setup>
 import { testInstanceConnectionApi } from '@/api/admin'
+import { RefreshInstanceMetaApi } from '@/api/das'
 import { createOrderApi, getOrderDataSourcesApi, getOrderDetailApi, getOrderSchemasApi, getOrderUsersApi, preInspectOrderApi, updateOrderContentApi } from '@/api/order'
 import CodeMirror from '@/components/edit/Codemirror.vue'
 import { useOrderCreatePrefillStore } from '@/store/prefill'
@@ -392,6 +394,9 @@ const uiState = reactive({
   instanceChecking: false,
   instanceErrorCopied: false,
   instanceRuntimeError: '',
+  // 库清单正在向目标实例重新采集：刷新按钮据此转 loading，
+  // 避免「点了没反应」——同步 SQLServer 的多个库本来就要几秒。
+  metaRefreshing: false,
   fullscreenTarget: null,
 })
 
@@ -403,15 +408,20 @@ const uiData = reactive({
   dbTypes: [
     { value: 'MySQL', label: 'MySQL' },
     { value: 'PostgreSQL', label: 'PostgreSQL' },
+    // 金仓：PG 协议，审核/执行均复用 PG 通道（后端 db_support.isPgLikeDB 已含 kingbase）
+    { value: 'Kingbase', label: 'Kingbase' },
     { value: 'Oracle', label: 'Oracle' },
     { value: 'TiDB', label: 'TiDB' },
     { value: 'Doris', label: 'Doris' },
+    // 与后端 validateOrderSQLTypeSupport / GetOrderDataSourcesService 的放行清单保持一致；
+    // 库/schema 两级联动与 PG 同口径（isPgLikeSelected 已包含 sqlserver）
+    { value: 'SQLServer', label: 'SQLServer' },
   ],
 })
 
 const normalizedDbType = computed(() => String(formState.db_type || '').toLowerCase())
 const trimmedChangeSql = computed(() => normalizeSqlIntentText(editorState.content))
-const isPgLikeSelected = computed(() => ['postgresql', 'sqlserver'].includes(normalizedDbType.value))
+const isPgLikeSelected = computed(() => ['postgresql', 'kingbase', 'sqlserver'].includes(normalizedDbType.value))
 const isCreateSchemaIntent = computed(() => /^create\s+schema\b/i.test(trimmedChangeSql.value))
 const isCreateDatabaseIntent = computed(() => {
   if (/^create\s+database\b/i.test(trimmedChangeSql.value)) return true
@@ -552,7 +562,7 @@ const formatSchemaLabel = (resource, fallbackPrefix = '') => {
     const parts = raw.split('.')
     return fallbackPrefix ? `${fallbackPrefix} / ${parts[parts.length - 1]}` : parts[parts.length - 1]
   }
-  if (['postgresql', 'sqlserver'].includes(normalizedDbType.value)) {
+  if (['postgresql', 'kingbase', 'sqlserver'].includes(normalizedDbType.value)) {
     const parts = raw.split('.')
     return parts[parts.length - 1]
   }
@@ -692,14 +702,34 @@ const readSqlFile = async (file, target) => {
   return false
 }
 
+// 刷新按钮不能只重读本地快照：快照没过期时怎么点都看不到刚建的库。
+// 先让后端去目标实例真正重采一次（与写后失效、读时惰性共同构成三条刷新路径），
+// 再回来读快照；失败时保留原选项，只提示原因，不把下拉清空。
+const refreshMetaAndReload = async (reload) => {
+  if (!formState.instance_id || uiState.metaRefreshing) return
+  uiState.metaRefreshing = true
+  try {
+    const res = await RefreshInstanceMetaApi(formState.instance_id).catch((err) => {
+      const text = String(err?.message || err?.data?.message || '刷新库列表失败，请检查数据源连接状态').trim()
+      uiState.instanceRuntimeError = text
+      message.error(text)
+      return null
+    })
+    if (!res) return
+    await reload()
+  } finally {
+    uiState.metaRefreshing = false
+  }
+}
+
 const refreshSchemaOptions = async () => {
   if (!formState.instance_id || !formState.database) return
-  await loadSchemaOptions()
+  await refreshMetaAndReload(loadSchemaOptions)
 }
 
 const refreshDatabaseOptions = async () => {
   if (!formState.instance_id) return
-  await loadDatabaseOptions()
+  await refreshMetaAndReload(loadDatabaseOptions)
 }
 
 const submitOrder = async () => {
@@ -847,7 +877,7 @@ const applyDraft = async (draft) => {
   formState.db_type = draft.db_type || 'MySQL'
   formState.instance_id = draft.instance_id
   formState.database = draft.database
-  formState.schema = ['postgresql', 'sqlserver'].includes(String(draft.db_type || '').toLowerCase())
+  formState.schema = ['postgresql', 'kingbase', 'sqlserver'].includes(String(draft.db_type || '').toLowerCase())
     ? draft.schema
     : (draft.schema || draft.database)
   formState.executor = draft.executor === 'SELF' ? userStore.username : (draft.executor || undefined)

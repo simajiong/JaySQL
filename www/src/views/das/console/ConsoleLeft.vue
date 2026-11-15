@@ -66,7 +66,14 @@
         <template #message>实例当前不可用</template>
         <template #description>{{ uiState.offlineMessage }}</template>
       </a-alert>
-      <div v-if="!uiState.isTreeLoading && !uiData.instances.length" class="tree-empty-tip">暂无授权数据源，请联系管理员配置数据访问权限</div>
+      <!-- 2026-11-10：实例列表加载失败与「无授权」是两回事。
+           此前 fetchInstances 的 .catch(() => {}) 会把 401/5xx/网络异常一律吞掉，
+           左树静默渲染「暂无授权数据源」，错误被伪装成权限问题。现在失败态单独渲染并提供重试。 -->
+      <div v-if="uiState.instancesError" class="tree-error-tip">
+        <div class="tree-error-text">实例列表加载失败：{{ uiState.instancesError }}</div>
+        <a class="tree-error-retry" @click="handleRetryFetchInstances">重试</a>
+      </div>
+      <div v-else-if="!uiState.isTreeLoading && !uiData.instances.length" class="tree-empty-tip">暂无授权数据源，请联系管理员配置数据访问权限</div>
       <div v-else-if="!uiData.selectedInstanceId && !uiState.isTreeLoading" class="tree-empty-tip">选择数据源后，这里将展示数据库对象</div>
       <a-spin v-else class="tree-spin" :spinning="uiState.isTreeLoading" tip="加载中...">
         <div id="tree-container" @click.capture="handleTreeSwitcherClickCapture">
@@ -368,6 +375,7 @@ import {
   GetSchemaBrowserChildrenApi,
   GetSchemaTablesApi,
   GetTableInfoApi,
+  RefreshInstanceMetaApi,
 } from '@/api/das'
 import {
   FAMILY_CLICKHOUSE,
@@ -572,6 +580,7 @@ const showMessage = (type, text, duration) => {
 const uiState = reactive({
   open: false,
   isTreeLoading: false,
+  instancesError: '',
   offlineInstanceNoticeShown: false,
   offlineMessage: '',
   isCurrentInstanceRefreshing: false,
@@ -942,10 +951,54 @@ const clearCurrentSelection = (shouldEmit = false) => {
   resetInstanceData(shouldEmit)
 }
 
+// 实例列表加载失败的提示文案：区分网络异常与业务错误。
+// 注意 get() 包装器（utils/request.js）会把 HTTP 错误归一化成响应体 {code, message}，
+// 网络层错误则原样抛 AxiosError（无 data，code 为 ERR_NETWORK/ECONNABORTED 等）。
+const resolveInstancesErrorMessage = (error) => {
+  const errCode = String(error?.code || '').toUpperCase()
+  const isNetwork =
+    !error?.data &&
+    (errCode === 'ERR_NETWORK' ||
+      errCode === 'ECONNABORTED' ||
+      errCode === 'ETIMEDOUT' ||
+      /network error|timeout/i.test(String(error?.message || '')))
+  if (isNetwork) {
+    return '网络异常，请检查网络后重试'
+  }
+  const message = String(error?.message || error?.msg || error?.data?.message || '').trim()
+  return message || '请稍后重试'
+}
+
+// 失败重试入口（模板「重试」链接）：清掉错误态重新拉取
+const handleRetryFetchInstances = () => {
+  void fetchInstances()
+}
+
 const fetchInstances = async () => {
-  const res = await GetInstancesApi().catch(() => {})
+  // 2026-11-10：不再 .catch(() => {}) 静默吞错。
+  // 分三种情况：
+  //   1. 成功（含空列表）→ 正常口径，空列表就是「确实无授权」；
+  //   2. 401/422 → 会话过期，request.js 全局接管（刷新 token / 跳登录），这里不重复提示；
+  //   3. 其余失败 → instancesError 置位，模板渲染红色提示 + 重试，且保留既有列表不清空。
+  // 取消（路由切换/闲置唤醒会 abort 在途请求）不是错误，保持原状。
+  uiState.instancesError = ''
+  let res = null
+  try {
+    res = await GetInstancesApi()
+  } catch (error) {
+    const isCanceled = error?.canceled === true || error?.code === 'ERR_CANCELED'
+    // 401 的归一化形态是 {code: 401, msg: ...}（数字 code），所以除了 .status 还要认 code
+    const status = error?.status || Number(error?.code)
+    if (!isCanceled && status !== 401 && status !== 422) {
+      uiState.instancesError = resolveInstancesErrorMessage(error)
+    }
+  }
   if (res) {
     uiData.instances = res.data || []
+  }
+  if (uiState.instancesError) {
+    // 失败时保留旧列表与选中态，等用户重试；不做 validIds 清理
+    return
   }
   const available = uiData.instances || []
   const validIds = new Set((available || []).map((t) => String(t.instance_id)))
@@ -1029,6 +1082,8 @@ const formatDbType = (value) => {
       return 'MySQL'
     case 'postgresql':
       return 'PostgreSQL'
+    case 'kingbase':
+      return 'Kingbase'
     case 'sqlserver':
       return 'SQL Server'
     case 'oracle':
@@ -2360,6 +2415,14 @@ const buildPreviewContextPayload = (node) => {
 const refreshInstanceRootNode = async (node, opts = {}) => {
   const instanceMeta = getInstanceMeta(node.instanceId)
   if (!instanceMeta?.instance_id) return
+  // 用户主动刷新时必须先让后端重采一次库清单：
+  // 资源树读的是本地快照表，只重读快照的话，刚建的库在 TTL 到期前怎么刷都看不到。
+  // 非用户触发（展开节点、后台补全）不重采，避免把页面浏览变成对目标库的持续采集。
+  if (opts.userTriggered) {
+    await RefreshInstanceMetaApi(instanceMeta.instance_id).catch((err) => {
+      showMessage('error', String(err?.message || err?.data?.message || '刷新库列表失败，请检查数据源连接状态').trim())
+    })
+  }
   const family = resolveInstanceDbFamily(instanceMeta) || resolveFamilyInContext(instanceMeta.db_type, instanceMeta)
   const primaryType = getPrimaryResourceType(family)
   let resourcesRes = await fetchResources(instanceMeta.instance_id, primaryType, '', opts)
@@ -4598,6 +4661,14 @@ const destroyRuntime = () => {
 }
 
 onMounted(() => {
+  // 2026-11-10：无实例上下文时主动预取实例列表。
+  // 此前 fetchInstances 只被 doSyncTreeByContext 调用（要求共享上下文带 instance_id），
+  // 当缓存 tab 未绑定实例（「未选择实例」）时上下文为空，左树永远不发起请求，
+  // 空列表被渲染成「暂无授权数据源」——而授权其实没问题（实测工单）。
+  // 预取后空上下文走第二条空态文案「选择数据源后，这里将展示数据库对象」，不再误导。
+  if (!dasInstanceData?.value?.instance_id) {
+    void fetchInstances()
+  }
   syncTreeByContext(dasInstanceData.value || {})
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleWindowResize)
@@ -4770,6 +4841,34 @@ teardownRuntimeRefs.drawerSelectedTableWatchStop = watch(
   font-size: 12px;
   line-height: 1.6;
   color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.45));
+}
+
+/* 实例列表加载失败提示（区别于「暂无授权」的空态文案） */
+.tree-error-tip {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  background: #fff2f0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.tree-error-text {
+  color: #a8071a;
+  word-break: break-all;
+}
+
+.tree-error-retry {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--gi-color-primary, #0f766e);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tree-error-retry:hover {
+  text-decoration: underline;
 }
 :deep(.ant-tree-node-content-wrapper:has(.empty-placeholder-row)) {
   pointer-events: none;

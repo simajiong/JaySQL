@@ -26,5 +26,8 @@ func (s *AdminSyncInstanceMetaService) Run() error {
 		}
 		return err
 	}
-	return commonTasks.SyncDBMetaForInstance(instance)
+	// 走统一刷新入口：同步状态（成功时间 / 失败原因）会一起落库，
+	// 页面上的「同步中 / 上次同步于」才不会因为走了不同入口而失真。
+	_, err = commonTasks.RefreshInstanceMeta(instance.InstanceID)
+	return err
 }

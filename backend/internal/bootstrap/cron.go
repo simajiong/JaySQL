@@ -20,6 +20,9 @@ func InitializeCron() {
 	global.App.Cron = cron.New()
 
 	go func() {
+		// 库/schema 元数据全量对账。默认 */30，只负责「平台无感知的变更」
+		// （DBA 直连客户端建库）。平台内建库走写后失效 + 读时惰性，秒级可见，
+		// 见 common/tasks/meta_refresh.go 的文件头说明。
 		_, err := global.App.Cron.AddFunc(global.App.Config.Crontab.SyncDBMetas, func() {
 			global.App.Log.Info("Run SyncDBMeta At:", time.Now())
 			commonTasks.SyncDBMeta()

@@ -72,6 +72,10 @@ type ResponseData struct {
 	QueryID  string                    `json:"query_id"`
 	Data     *[]map[string]interface{} `json:"data"`
 	Columns  *[]string                 `json:"columns"`
+	// 数据安全脱敏挂钩（views 层填充）：本次结果被脱敏的列名与引用的明文工单号。
+	// 未命中脱敏规则时为空，不改变既有前端消费逻辑。
+	MaskedColumns []string `json:"masked_columns,omitempty"`
+	PlainGrantNo  string   `json:"plain_grant_no,omitempty"`
 }
 
 // 执行接口

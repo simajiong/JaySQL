@@ -20,6 +20,8 @@ import (
 	commonModels "github.com/simajiong/jaysql/internal/common/models"
 	commonServices "github.com/simajiong/jaysql/internal/common/services"
 	dasModels "github.com/simajiong/jaysql/internal/das/models"
+	datasecModels "github.com/simajiong/jaysql/internal/datasec/models"
+	datasecServices "github.com/simajiong/jaysql/internal/datasec/services"
 	feedbackModels "github.com/simajiong/jaysql/internal/feedback/models"
 	hotArticleModels "github.com/simajiong/jaysql/internal/hotarticle/models"
 	hotArticleServices "github.com/simajiong/jaysql/internal/hotarticle/services"
@@ -150,6 +152,8 @@ func initializeTables(db *gorm.DB) {
 		&commonModels.InsightInstanceEnvironments{},
 		&commonModels.InsightInstances{},
 		&commonModels.InsightInstanceSchemas{},
+		// 元数据快照刷新状态（一实例一行）：刷新器的节流依据与页面同步状态来源
+		&commonModels.InsightInstanceMetaState{},
 		&commonModels.InsightRiskDismissed{},
 		&commonModels.InsightNotifySettings{},
 		&commonModels.InsightSystemParam{},
@@ -206,6 +210,10 @@ func initializeTables(db *gorm.DB) {
 		&announcementModels.InsightAnnouncement{},
 		// 首页相关热文（管理员可配置）
 		&hotArticleModels.InsightHotArticle{},
+		// 数据安全（脱敏）：规则 / 列配置 / 明文工单
+		&datasecModels.InsightDataSecRules{},
+		&datasecModels.InsightDataSecColumns{},
+		&datasecModels.InsightDataSecPlainGrants{},
 	)
 	if err != nil {
 		global.App.Log.Fatal("migrate table failed", err.Error())
@@ -214,6 +222,8 @@ func initializeTables(db *gorm.DB) {
 	// 慢日志的 event_key 唯一索引依赖存量数据回填，不能交给 AutoMigrate，
 	// 必须与 monitor 的 EnsureMonitorSchema 一样在表结构就位后单独补。
 	performanceServices.EnsureSlowLogSchema(db)
+	// 内置脱敏规则幂等 seed（6 条，已存在则跳过）
+	datasecServices.EnsureBuiltinRules(db)
 	logDataGrantMigrationState(db)
 }
 
@@ -513,6 +523,11 @@ func initializeRBACPermissions(db *gorm.DB) {
 		{"system.announcement.manage", "管理公告", "system", "announcement", "manage", "action", "新增编辑删除公告及启停公告"},
 		{"system.hotarticle.view", "查看热文管理", "system", "hotarticle", "view", "page", "查看首页相关热文配置列表"},
 		{"system.hotarticle.manage", "管理热文", "system", "hotarticle", "manage", "action", "新增编辑删除首页热文、启停与调整排序"},
+		// 数据安全（脱敏）：规则配置 / 列配置与自动发现 / 明文工单
+		{"datasec.rule.view", "查看脱敏配置", "datasec", "rule", "view", "page", "查看脱敏规则与库表列配置"},
+		{"datasec.rule.manage", "管理脱敏配置", "datasec", "rule", "manage", "action", "维护脱敏规则、绑定列与触发敏感列扫描"},
+		{"datasec.plain.request", "申请明文访问", "datasec", "plain", "request", "action", "发起明文访问工单申请并查看自己的申请记录"},
+		{"datasec.plain.approve", "审批明文访问", "datasec", "plain", "approve", "action", "审批/驳回明文工单、收回已生效授权"},
 	}
 
 	for _, item := range permissions {

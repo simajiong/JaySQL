@@ -92,6 +92,13 @@
                       class="entry-picker__select"
                       @change="onPickerDatabaseChange"
                     />
+                    <a-tooltip title="重新从目标数据源采集库清单（刚建的库点这里就能看到）">
+                      <a-button :loading="metaRefreshing" :disabled="!form.instance_id" @click="refreshSchemaRows">
+                        <template #icon>
+                          <ReloadOutlined />
+                        </template>
+                      </a-button>
+                    </a-tooltip>
                     <a-select
                       v-if="hasSchemaLevel"
                       v-model:value="picker.schemas"
@@ -271,7 +278,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { InfoCircleOutlined } from '@ant-design/icons-vue'
+import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useUserStore } from '@/store/user'
 import {
   CreateAccessRequestApi,
@@ -280,6 +287,7 @@ import {
   GetAccessRequestDetailApi,
   GetAccessSchemaOptionsApi,
   GetAccessTableOptionsApi,
+  RefreshInstanceMetaApi,
 } from '@/api/das'
 import {
   ACCESS_EXPIRE_DEFAULT,
@@ -394,6 +402,9 @@ const loadInstanceOptions = async () => {
 // ---------------------------------------------------------------------------
 const schemaLoading = ref(false)
 const schemaRows = ref([])
+// 手动重采库清单时的 loading：一次 SQLServer 同步要按库逐个查 schema，
+// 不给反馈的话用户会以为按钮没生效。
+const metaRefreshing = ref(false)
 
 // 授权路径里取库名（"库.模式" 两段式）
 const databaseOfPath = (path) => {
@@ -413,6 +424,24 @@ const loadSchemaRows = async () => {
     schemaRows.value = res?.data || []
   } finally {
     schemaLoading.value = false
+  }
+}
+
+// 手动刷新：先让后端去目标实例真正重采一次库清单，再读快照。
+// 只重读快照是没用的——快照没过期时新建的库怎么点都看不到。
+const refreshSchemaRows = async () => {
+  if (!form.instance_id || metaRefreshing.value) return
+  metaRefreshing.value = true
+  try {
+    const res = await RefreshInstanceMetaApi(form.instance_id).catch((err) => {
+      message.error(String(err?.message || err?.data?.message || '刷新库列表失败，请检查数据源连接状态').trim())
+      return null
+    })
+    if (!res) return
+    await loadSchemaRows()
+    picker.databases = picker.databases.filter((db) => databaseOptions.value.some((opt) => opt.value === db))
+  } finally {
+    metaRefreshing.value = false
   }
 }
 

@@ -10,6 +10,14 @@ type App struct {
 
 type Crontab struct {
 	SyncDBMetas string `mapstructure:"sync_db_metas" json:"sync_db_metas" yaml:"sync_db_metas"`
+	// MetaRefreshTTL 库/schema 元数据快照的「读时惰性刷新」窗口（秒）。
+	//
+	// 刷新本身不再依赖定时任务：建库/改库成功后平台会主动失效（见
+	// common/tasks/meta_refresh.go），本项只决定「读接口发现快照过期后
+	// 多久补刷一次」，用于兜住平台无感知的变更（DBA 直连客户端建库）。
+	//   0（或不配）  回落默认 60s
+	//   负数         关闭读时惰性刷新，只保留写后失效 + 定时对账
+	MetaRefreshTTL int `mapstructure:"meta_refresh_ttl" json:"meta_refresh_ttl" yaml:"meta_refresh_ttl"`
 	// 实例连通性探活。留空/不配一律回落代码默认值（见 common/services/instance_probe.go）：
 	// tick @every 30s、异常实例 60s 复测、可用实例 600s 兜底。
 	InstanceProbe              string `mapstructure:"instance_probe" json:"instance_probe" yaml:"instance_probe"`
@@ -108,6 +116,33 @@ func (c Configuration) AISettings() AIConfig {
 	return cfg
 }
 
+// Order 工单执行链的配置段。
+type Order struct {
+	// PGRollbackMaxRows 控制 PostgreSQL（含 Kingbase）DML 工单「回滚 SQL 生成」的影响行数上限：
+	// 工单执行成功且累计影响行数不超过该值时，才通过逻辑解码（test_decoding 插件 + 临时复制槽）
+	// 生成精确的逆向回滚语句；超过上限则跳过生成（批量清理场景请分批执行）。
+	//   未配置 / 0  → 回落默认 1000 行
+	//   负数        → 关闭 PostgreSQL 回滚 SQL 生成（工单照常执行）
+	// 注意：该能力还要求实例 wal_level=logical，未开启时工单正常执行但会跳过回滚生成并记录提示。
+	PGRollbackMaxRows int64 `mapstructure:"pg_rollback_max_rows" json:"pg_rollback_max_rows" yaml:"pg_rollback_max_rows"`
+}
+
+// DefaultPGRollbackMaxRows 是 PGRollbackMaxRows 的默认值。
+// 与 MySQL 侧 10 万行的硬编码阈值不同：PG 逻辑解码需要逐行解析文本输出并生成
+// 逐行逆向语句，且生成阶段在同一执行链内同步完成，默认收紧到 1000 行，
+// 由用户按实际场景放宽或收紧。
+const DefaultPGRollbackMaxRows int64 = 1000
+
+// OrderSettings 返回工单链配置，并对零值应用默认值。
+// 使用方一律通过本方法读取，不要直接读 c.Order。
+func (c Configuration) OrderSettings() Order {
+	cfg := c.Order
+	if cfg.PGRollbackMaxRows == 0 {
+		cfg.PGRollbackMaxRows = DefaultPGRollbackMaxRows
+	}
+	return cfg
+}
+
 type Configuration struct {
 	App      App      `mapstructure:"app" json:"app" yaml:"app"`
 	Crontab  Crontab  `mapstructure:"crontab" json:"crontab" yaml:"crontab"`
@@ -116,6 +151,7 @@ type Configuration struct {
 	Redis    Redis    `mapstructure:"redis" json:"redis" yaml:"redis"`
 	Das      Das      `mapstructure:"das" json:"das" yaml:"das"`
 	Ghost    Ghost    `mapstructure:"ghost" json:"ghost" yaml:"ghost"`
+	Order    Order    `mapstructure:"order" json:"order" yaml:"order"`
 	Notify   Notify   `mapstructure:"-" json:"notify" yaml:"-"`
 	AI       AIConfig `mapstructure:"ai" json:"ai" yaml:"ai"`
 }

@@ -26,7 +26,10 @@ import (
 	"github.com/simajiong/jaysql/internal/orders/forms"
 	ordersModels "github.com/simajiong/jaysql/internal/orders/models"
 
+	dasServices "github.com/simajiong/jaysql/internal/das/services"
+
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -441,11 +444,15 @@ func splitSQLStatements(raw string) []string {
 }
 
 // executeRollbackStatement 执行单条回滚语句。
-// 回滚语句由 Binlog 行事件生成，只存在于 MySQL 类实例（MySQL/Doris/TiDB），
+// 回滚语句来源：
+//   - MySQL 类（MySQL/Doris/TiDB）：Binlog 行事件解析；
+//   - PostgreSQL/Kingbase：逻辑解码（test_decoding + 临时复制槽）；
 // 这里直连目标库逐条执行（不走工单执行器：避免为回滚动作再生成一次回滚 SQL）。
 func executeRollbackStatement(config *base.DBConfig, stmt string) error {
 	switch config.DBType {
 	case "MySQL", "Doris", "TiDB":
+	case "PostgreSQL", "Kingbase":
+		return executePostgresRollbackStatement(config, stmt)
 	default:
 		return fmt.Errorf("当前数据库类型(%s)不支持自动回滚", config.DBType)
 	}
@@ -459,6 +466,46 @@ func executeRollbackStatement(config *base.DBConfig, stmt string) error {
 		return err
 	}
 	return nil
+}
+
+// executePostgresRollbackStatement 直连 PG 系实例执行单条回滚语句。
+// 回滚语句可能是多语句块（BEGIN;...;COMMIT; 由调用方 splitSQLStatements 拆分），
+// 这里逐条自动提交执行即可满足幂等性（语句本身已带 ON CONFLICT/IS NOT DISTINCT FROM 守卫）。
+func executePostgresRollbackStatement(cfg *base.DBConfig, stmt string) error {
+	databaseName, err := splitRollbackDatabase(cfg)
+	if err != nil {
+		return err
+	}
+	sslMode := "disable"
+	if len(cfg.ExtraConfig) > 0 {
+		var extra struct {
+			SSLMode string `json:"sslmode"`
+		}
+		_ = json.Unmarshal(cfg.ExtraConfig, &extra)
+		if extra.SSLMode != "" {
+			sslMode = extra.SSLMode
+		}
+	}
+	connString := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		cfg.UserName, cfg.Password, cfg.Hostname, cfg.Port, databaseName, sslMode)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	conn, err := pgx.Connect(ctx, connString)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, stmt)
+	return err
+}
+
+// splitRollbackDatabase 从 DBConfig.Schema（「database.schema」资源路径）拆出回滚直连的库名。
+func splitRollbackDatabase(cfg *base.DBConfig) (string, error) {
+	parts := strings.SplitN(strings.TrimSpace(cfg.Schema), ".", 2)
+	if parts[0] == "" {
+		return "", fmt.Errorf("回滚连接缺少目标库信息")
+	}
+	return parts[0], nil
 }
 
 // rollbackSucceededTasks 回滚本次已执行成功的任务（error_policy=ROLLBACK），按执行逆序处理。
@@ -680,6 +727,10 @@ func runOrderTasks(ctx context.Context, orderID, username string, policies Execu
 		global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 			Where("task_id=?", task.TaskID).
 			Updates(map[string]any{"progress": "COMPLETED", "result": data})
+
+		// 工单里建库/删库成功后同样要立刻失效元数据快照：
+		// 审批通过建出来的库，如果还要等定时任务，审批人和申请人都会以为「没建成功」。
+		dasServices.NotifySchemaInventoryChanged(record.InstanceID, task.SQL)
 
 		writeExecuteLog(orderID, username, fmt.Sprintf("任务执行成功，SQL：%s", truncateSQLHint(task.SQL)))
 		succeeded = append(succeeded, task)

@@ -90,6 +90,39 @@ func (InsightInstanceSchemas) TableName() string {
 	return "insight_instance_schemas"
 }
 
+// InsightInstanceMetaState 数据源库/schema 元数据快照的刷新状态。
+//
+// 一实例一行，用来回答三个问题：上次什么时候同步成功、现在是不是正在同步、
+// 上次失败到底报了什么错。insight_instance_schemas 只存"结果"，
+// 光看它无法区分「该实例真的没有库」和「从来没同步过」——这正是此前
+// 新建实例后页面空白、又说不清原因的地方。
+//
+// 刷新本身由 common/tasks 的刷新器驱动（写后失效 + 读时惰性 + 定时对账三条路径），
+// 本表只承载状态，不参与业务判定。
+type InsightInstanceMetaState struct {
+	// InstanceID 直接做主键：一个实例只有一行状态，不存在按实例再分页查询的场景。
+	InstanceID string `gorm:"type:char(15);primaryKey;comment:数据源业务ID"`
+	// LastSyncedAt 最近一次「同步成功」的时间；为空表示从未成功过。
+	LastSyncedAt *LocalTime `gorm:"type:datetime(3);null;comment:最近一次同步成功时间"`
+	// LastAttemptAt 最近一次「发起同步」的时间（不管成功失败）。
+	// 读时惰性刷新靠它做节流：没到 TTL 就不再重复触发。
+	LastAttemptAt *LocalTime `gorm:"type:datetime(3);null;index:idx_meta_state_last_attempt;comment:最近一次发起同步时间"`
+	// LastStatus never / success / failed，供页面区分「没同步过」和「同步失败」。
+	LastStatus string `gorm:"type:varchar(16);not null;default:'never';comment:最近一次同步结果 never/success/failed"`
+	// LastError 最近一次失败原因，截断到 512 字符，只做展示与排障，不落堆栈。
+	LastError string `gorm:"type:varchar(512);not null;default:'';comment:最近一次失败原因"`
+	// ResourceCount 本次同步到的库/模式条数，用于「同步成功但一条都没采到」的快速识别。
+	ResourceCount int `gorm:"type:int;not null;default:0;comment:本次同步到的库或模式数量"`
+	// SyncingSince 本轮同步开始时间；非空表示正在同步，超过 stale 阈值视为进程异常退出留下的脏标记。
+	SyncingSince *LocalTime `gorm:"type:datetime(3);null;comment:本轮同步开始时间，非空表示正在同步"`
+	CreatedAt    LocalTime  `gorm:"autoCreateTime;comment:创建时间"`
+	UpdatedAt    LocalTime  `gorm:"index:idx_meta_state_updated_at;autoUpdateTime;comment:更新时间"`
+}
+
+func (InsightInstanceMetaState) TableName() string {
+	return "insight_instance_meta_state"
+}
+
 type InsightRiskDismissed struct {
 	ID        uint64         `gorm:"primaryKey;autoIncrement;comment:自增主键" json:"id"`
 	CreatedAt LocalTime      `gorm:"index:idx_created_at;autoCreateTime;comment:创建时间" json:"created_at"`

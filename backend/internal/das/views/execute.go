@@ -2,6 +2,7 @@ package views
 
 import (
 	commonServices "github.com/simajiong/jaysql/internal/common/services"
+	datasecServices "github.com/simajiong/jaysql/internal/datasec/services"
 	"github.com/simajiong/jaysql/internal/global"
 
 	"github.com/simajiong/jaysql/pkg/response"
@@ -13,6 +14,18 @@ import (
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 )
+
+// applyDataSecMasking 查询结果脱敏（数据安全模块统一挂钩）：
+// 在 5 个执行视图的成功分支、response.Success 之前调用。
+// 任何内部错误都不影响查询返回（脱敏是增强能力，配置拉不到时按无配置处理）；
+// 命中规则时在响应里带上 masked_columns / plain_grant_no，供前端提示与审计关联。
+func applyDataSecMasking(instanceID, username string, returnData *services.ResponseData) {
+	masked, grantNo := datasecServices.MaskQueryResult(instanceID, username, returnData.Columns, returnData.Data)
+	if len(masked) > 0 {
+		returnData.MaskedColumns = masked
+		returnData.PlainGrantNo = grantNo
+	}
+}
 
 // 执行MySQL/TiDB查询
 func ExecuteMySQLQueryView(c *gin.Context) {
@@ -77,6 +90,7 @@ func ExecuteMySQLQueryView(c *gin.Context) {
 				AfterData:      map[string]any{"query_id": returnData.QueryID, "duration": returnData.Duration, "rows": rows},
 				SQLText:        returnData.SQLText,
 			})
+			applyDataSecMasking(form.InstanceID, username, &returnData)
 			response.Success(c, returnData, "success")
 		}
 	} else {
@@ -244,6 +258,7 @@ func ExecuteClickHouseQueryView(c *gin.Context) {
 				AfterData:      map[string]any{"query_id": returnData.QueryID, "duration": returnData.Duration, "rows": rows},
 				SQLText:        returnData.SQLText,
 			})
+			applyDataSecMasking(form.InstanceID, username, &returnData)
 			response.Success(c, returnData, "success")
 		}
 	} else {
@@ -326,6 +341,7 @@ func ExecutePostgresQueryView(c *gin.Context) {
 				AfterData:      map[string]any{"query_id": returnData.QueryID, "duration": returnData.Duration, "rows": rows},
 				SQLText:        returnData.SQLText,
 			})
+			applyDataSecMasking(form.InstanceID, username, &returnData)
 			response.Success(c, returnData, "success")
 		}
 	} else {
@@ -488,6 +504,7 @@ func ExecuteSQLServerQueryView(c *gin.Context) {
 				AfterData:      map[string]any{"query_id": returnData.QueryID, "duration": returnData.Duration, "rows": rows},
 				SQLText:        returnData.SQLText,
 			})
+			applyDataSecMasking(form.InstanceID, username, &returnData)
 			response.Success(c, returnData, "success")
 		}
 	} else {
@@ -569,6 +586,7 @@ func ExecuteOracleQueryView(c *gin.Context) {
 				AfterData:      map[string]any{"query_id": returnData.QueryID, "duration": returnData.Duration, "rows": rows},
 				SQLText:        returnData.SQLText,
 			})
+			applyDataSecMasking(form.InstanceID, username, &returnData)
 			response.Success(c, returnData, "success")
 		}
 	} else {

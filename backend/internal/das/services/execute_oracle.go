@@ -85,5 +85,7 @@ func (s *ExecuteOracleQueryService) Run() (ResponseData, error) {
 	responseData.Duration = fmt.Sprintf("%dms", duration)
 	responseData.Data = data
 	responseData.Columns = columns
+	// 写后失效：Oracle 的 schema 即用户，CREATE/DROP USER 会改变 schema 清单。
+	NotifySchemaInventoryChanged(s.InstanceID, s.SQLText)
 	return responseData, nil
 }

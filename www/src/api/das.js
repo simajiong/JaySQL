@@ -16,6 +16,13 @@ const DAS_SILENT_SCHEMA_TABLES_CONFIG = {
 
 export const GetSchemasApi = (params) => get('/api/v1/das/schemas', params)
 export const GetInstancesApi = (params) => get('/api/v1/das/instances', params)
+// 库清单同步状态 / 手动刷新（工单提交、授权申请、SQL 工作台共用）。
+// 这些接口只触发一次只读元数据采集，不返回任何数据内容，
+// 所以工单提交人（order.submit）与权限申请人（das.access.apply）也有权限调用。
+export const GetInstanceMetaStatusApi = (instanceId) =>
+  get(`/api/v1/das/instances/${instanceId}/meta-status`, {}, { skipGlobalMessageError: true, silentBusinessError: true })
+export const RefreshInstanceMetaApi = (instanceId) =>
+  post(`/api/v1/das/instances/${instanceId}/refresh-meta`, {}, { skipGlobalMessageError: true, silentBusinessError: true })
 export const GetResourcesApi = (params, config = {}) => get('/api/v1/das/resources', params, { ...DAS_SILENT_RESOURCE_CONFIG, ...(config || {}) })
 export const GetSchemaTablesApi = (params, config = {}) => get('/api/v1/das/schema/tables', params, { ...DAS_SILENT_SCHEMA_TABLES_CONFIG, ...(config || {}) })
 // SQL 工作台「对象树」（Schema Browser）逐层懒加载取数

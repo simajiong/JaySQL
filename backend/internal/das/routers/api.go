@@ -9,6 +9,15 @@ import (
 func RegisterDasRoutes(das *gin.RouterGroup) {
 	das.GET("environments", middleware.RequirePermission("sql.console.access"), views.GetEnvironmentsView)
 	das.GET("instances", middleware.RequirePermission("sql.console.access"), views.GetInstancesView)
+	// 库清单同步状态 / 手动刷新。
+	// 刷新动作本身不返回任何数据内容，只触发一次只读元数据采集。
+	// 权限放得比「浏览库表」宽是有意的：工单提交人（order.submit）与
+	// 权限申请人（das.access.apply）都需要「刚建的库马上能选到」，
+	// 而他们往往没有 sql.console.access —— 只卡死在这一个权限点上，
+	// 刷新按钮对他们就是个摆设。数据可见性仍由授权表决定，与此无关。
+	metaAccess := middleware.RequireAnyPermission("sql.console.access", "order.submit", "das.access.apply", "system.das.view")
+	das.GET("instances/:id/meta-status", metaAccess, views.GetInstanceMetaStatusView)
+	das.POST("instances/:id/refresh-meta", metaAccess, views.RefreshInstanceMetaView)
 	das.GET("resources", middleware.RequirePermission("sql.console.access"), views.GetResourcesView)
 	das.GET("schemas", middleware.RequirePermission("sql.console.access"), views.GetSchemasView)
 	das.GET("schema/tables", middleware.RequirePermission("sql.console.access"), views.GetTablesView)

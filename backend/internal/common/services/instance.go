@@ -19,6 +19,7 @@ import (
 	"github.com/simajiong/jaysql/internal/common/dbfamily"
 	"github.com/simajiong/jaysql/internal/common/forms"
 	"github.com/simajiong/jaysql/internal/common/models"
+	"github.com/simajiong/jaysql/internal/common/tasks"
 
 	dasModels "github.com/simajiong/jaysql/internal/das/models"
 	dasServices "github.com/simajiong/jaysql/internal/das/services"
@@ -198,6 +199,11 @@ func (s *AdminCreateInstancesService) Run() (*models.InsightInstances, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 新建即拉一次库清单：否则新数据源在工单提交、授权申请、资源树里是一张空下拉，
+	// 用户只能干等定时任务（历史上最坏要 5 分钟）。这里异步触发，
+	// 保存接口不会被目标库的连接耗时拖住；连不上时失败原因会落进
+	// insight_instance_meta_state，页面据此提示而不是静默显示空列表。
+	tasks.RefreshInstanceMetaAsync(db.InstanceID)
 	return &db, nil
 }
 
@@ -288,7 +294,7 @@ func (s *AdminUpdateInstancesService) Run() error {
 
 	// 更新记录 + 对齐规范继承（同一事务）：
 	// 数据源只要归属于某个环境，就必须继承该环境的开发规范；改环境后同步改写绑定。
-	return global.App.DB.Transaction(func(tx *gorm.DB) error {
+	err = global.App.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.InsightInstances{}).Where("id=?", s.ID).Updates(updates)
 		if result.Error != nil {
 			var mysqlErr *mysql.MySQLError
@@ -299,6 +305,13 @@ func (s *AdminUpdateInstancesService) Run() error {
 		}
 		return syncInstanceStandardBinding(tx, target.InstanceID, s.Environment)
 	})
+	if err != nil {
+		return err
+	}
+	// 连接信息（主机/端口/账号/类型/库名）任何一项变化都可能落到另一套库清单上，
+	// 这里不做字段级比对，直接异步重拉一次——单实例的代价远小于「改了地址还显示旧库」。
+	tasks.RefreshInstanceMetaAsync(target.InstanceID)
+	return nil
 }
 
 // AdminUpdateInstanceRemarkService 行内修改数据源名称（remark）。
@@ -356,10 +369,15 @@ func normalizeInstanceExtraConfig(dbType string, raw map[string]any, mode string
 	}
 
 	switch dbType {
-	case "PostgreSQL":
+	case "PostgreSQL", "Kingbase":
+		// 两者 extra_config 结构一致，只有默认库不同：PG 是 postgres，金仓初始化后自带 test。
+		// 默认库必须落库，否则连接测试与元数据同步会各自兜底成不同值。
 		database := readString("database")
 		if database == "" {
 			database = "postgres"
+			if dbType == "Kingbase" {
+				database = "test"
+			}
 		}
 		cfg["database"] = database
 		sslmode := readString("sslmode")

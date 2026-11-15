@@ -249,10 +249,15 @@ func SyncDBMetaForInstance(row models.InsightInstances) error {
 			return err
 		}
 		resources = buildFlatResources(data, "database")
-	case "postgresql":
+	case "postgresql", "kingbase", "kingbasees":
+		// 金仓 KingbaseES 的 pg_database / information_schema.schemata 与 PG 同构，
+		// 库/schema 两级资源可直接复用同一组字典查询；只有默认连接库不同。
 		adminDB := extraCfg.Database
 		if adminDB == "" {
 			adminDB = "postgres"
+			if strings.HasPrefix(strings.ToLower(string(row.DbType)), "kingbase") {
+				adminDB = "test"
+			}
 		}
 		db := dao.PostgresDB{
 			User:     row.User,
@@ -419,6 +424,13 @@ func SyncDBMetaForInstance(row models.InsightInstances) error {
 }
 
 // 从用户定义的远程数据库实例同步库信息
+//
+// 2026-11-09 起它只是三条刷新路径里的「定时对账」一条（见 meta_refresh.go）：
+// 平台内建库已由写后失效 + 读时惰性刷新覆盖，这里降到 */30 兜底
+// 「平台完全没感知到的变更」（DBA 用客户端直连建库）。
+// 走 RefreshInstanceMeta 而不是直接调 SyncDBMetaForInstance，是为了把同步状态
+// 一并落进 insight_instance_meta_state —— 否则页面会认为这条实例「从未同步过」，
+// 每次打开都触发一次多余的惰性刷新。
 func SyncDBMeta() {
 	// 获取数据库配置列表
 	var records []models.InsightInstances
@@ -436,10 +448,8 @@ func SyncDBMeta() {
 				wg.Done()
 			}()
 
-			err := SyncDBMetaForInstance(row)
-			if err != nil {
+			if _, err := RefreshInstanceMeta(row.InstanceID); err != nil {
 				global.App.Log.Error(fmt.Sprintf("从主机%s:%d同步元数据失败，错误信息：%s", row.Hostname, row.Port, err.Error()))
-				return
 			}
 		}(row)
 	}

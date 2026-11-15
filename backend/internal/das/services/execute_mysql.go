@@ -67,6 +67,9 @@ func (s *ExecuteMySQLQueryService) validateStatementType(stmt ast.StmtNode) erro
 func (s *ExecuteMySQLQueryService) Run() (ResponseData, error) {
 	// 初始化SQLText为用户输入的SQLText
 	var responseData ResponseData = ResponseData{SQLText: s.SQLText}
+	// 先留一份用户原始语句：下面 Rewrite 会改写 s.SQLText（追加 hint / 重写 limit），
+	// 而「是不是库级 DDL」要按用户写的原文判断，不能被改写结果干扰。
+	originalSQL := s.SQLText
 	var data *[]map[string]any
 	// 创建数据库记录
 	jsonParams, err := json.Marshal(s.Params)
@@ -172,5 +175,8 @@ func (s *ExecuteMySQLQueryService) Run() (ResponseData, error) {
 	responseData.Duration = fmt.Sprintf("%dms", duration)
 	responseData.Data = data
 	responseData.Columns = columns
+	// 写后失效：CREATE/DROP DATABASE 这类库级 DDL 成功后立即重建该实例快照，
+	// 让工单提交、授权申请、资源树马上能看到新库，不必等定时同步。
+	NotifySchemaInventoryChanged(s.InstanceID, originalSQL)
 	return responseData, nil
 }
