@@ -146,9 +146,38 @@ func shouldSkipGhostTable(tableName string) bool {
 	return strings.HasSuffix(name, "_ghc") || strings.HasSuffix(name, "_gho") || strings.HasSuffix(name, "_del")
 }
 
+// getStringField 大小写不敏感地读取一行里的字符串列。
+//
+// 回归背景（2026-11-15）：Oracle 通过 go-ora 驱动返回的列名全是大写
+// （TABLE_SCHEMA / TABLE_NAME / COLUMN_NAME ...），而调用方习惯用小写 key 取值。
+// 精确匹配取不到 → 每一行都被判成「空行」跳过 → Tables 分组稳定返回空数组，
+// 前端显示「该库下暂无表」（实际 all_tab_columns 有 42 行列数据）。
+// 因此取值时按「精确 → 全大写 → 全小写」三档回退，兼容各引擎的大小写习惯。
 func getStringField(row map[string]interface{}, key string) string {
-	value, ok := row[key]
-	if !ok || value == nil {
+	get := func(k string) (interface{}, bool) {
+		v, ok := row[k]
+		if !ok || v == nil {
+			return nil, false
+		}
+		return v, true
+	}
+	value, ok := get(key)
+	if !ok {
+		value, ok = get(strings.ToUpper(key))
+	}
+	if !ok {
+		value, ok = get(strings.ToLower(key))
+	}
+	if !ok {
+		// 兜底：全表扫描一次做大小写无关匹配（列数很少，成本可忽略）
+		for k, v := range row {
+			if strings.EqualFold(k, key) && v != nil {
+				value, ok = v, true
+				break
+			}
+		}
+	}
+	if !ok {
 		return ""
 	}
 	return fmt.Sprintf("%v", value)
@@ -464,10 +493,12 @@ func (s *GetTablesService) getSQLServerMetaData(instanceCfg *InstanceCfg) (data 
 	order := make([]tableKey, 0)
 	seen := make(map[tableKey]struct{})
 	for _, row := range *rows {
-		ts, _ := row["table_schema"].(string)
-		tn, _ := row["table_name"].(string)
-		cn, _ := row["column_name"].(string)
-		dt, _ := row["data_type"].(string)
+		// 用 getStringField 而非 row["x"].(string)：兼容列名大小写差异
+		// （Oracle 走大写，MySQL/PG 走小写），见函数注释。
+		ts := getStringField(row, "table_schema")
+		tn := getStringField(row, "table_name")
+		cn := getStringField(row, "column_name")
+		dt := getStringField(row, "data_type")
 		if ts == "" || tn == "" || cn == "" {
 			continue
 		}
@@ -564,6 +595,15 @@ func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]
 		return nil, err
 	}
 
+	return buildOracleTablesResult(rows), nil
+}
+
+// buildOracleTablesResult 把「列级」查询结果聚合成前端约定的「表级」结构
+// （table_schema / table_name / columns），columns 内部用 $$ 分隔列属性、@@ 分隔列。
+//
+// 独立成函数便于单测：回归用例 tables_oracle_dialect_test.go 里的
+// TestBuildOracleTablesResultUppercaseColumns 直接用 Oracle 驱动的大写列名造数据。
+func buildOracleTablesResult(rows *[]map[string]interface{}) *[]map[string]interface{} {
 	type tableKey struct {
 		Schema string
 		Table  string
@@ -573,15 +613,19 @@ func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]
 		Type    string
 		Comment string
 	}
+	result := make([]map[string]interface{}, 0)
+	if rows == nil {
+		return &result
+	}
 	colsByTable := make(map[tableKey][]col)
 	order := make([]tableKey, 0)
 	seen := make(map[tableKey]struct{})
 	for _, row := range *rows {
-		ts, _ := row["table_schema"].(string)
-		tn, _ := row["table_name"].(string)
-		cn, _ := row["column_name"].(string)
-		dt, _ := row["data_type"].(string)
-		cc, _ := row["column_comment"].(string)
+		ts := getStringField(row, "table_schema")
+		tn := getStringField(row, "table_name")
+		cn := getStringField(row, "column_name")
+		dt := getStringField(row, "data_type")
+		cc := getStringField(row, "column_comment")
 		if ts == "" || tn == "" || cn == "" {
 			continue
 		}
@@ -593,7 +637,7 @@ func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]
 		colsByTable[key] = append(colsByTable[key], col{Name: cn, Type: dt, Comment: cc})
 	}
 
-	result := make([]map[string]interface{}, 0, len(order))
+	result = make([]map[string]interface{}, 0, len(order))
 	for _, key := range order {
 		colParts := make([]string, 0, len(colsByTable[key]))
 		for _, c := range colsByTable[key] {
@@ -605,7 +649,7 @@ func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]
 			"columns":      strings.Join(colParts, "@@"),
 		})
 	}
-	return &result, nil
+	return &result
 }
 
 func (s *GetTablesService) Run() (responseData *[]map[string]interface{}, err error) {

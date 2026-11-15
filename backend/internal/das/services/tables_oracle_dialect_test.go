@@ -80,3 +80,54 @@ func TestOracleTablesQueryQuote(t *testing.T) {
 		t.Fatalf("schema 字面量未正确拼入\n%s", query)
 	}
 }
+
+// 回归（2026-11-15 生产实锤）：go-ora 驱动返回的列名是全大写
+// （TABLE_SCHEMA / TABLE_NAME / COLUMN_NAME / DATA_TYPE / COLUMN_COMMENT），
+// 而解析代码用小写 key 取值 → 每行都被当成空行跳过 → 返回空数组，
+// 前端显示「该库下暂无表」（实测 all_tab_columns 有 42 行）。
+// 约定：列名大小写无关，必须能聚合出表级结果。
+func TestBuildOracleTablesResultUppercaseColumns(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"TABLE_SCHEMA": "HR", "TABLE_NAME": "COUNTRIES", "COLUMN_NAME": "COUNTRY_ID", "DATA_TYPE": "CHAR", "ORDINAL_POSITION": "1", "COLUMN_COMMENT": "Primary key"},
+		{"TABLE_SCHEMA": "HR", "TABLE_NAME": "COUNTRIES", "COLUMN_NAME": "COUNTRY_NAME", "DATA_TYPE": "VARCHAR2", "ORDINAL_POSITION": "2", "COLUMN_COMMENT": nil},
+		{"TABLE_SCHEMA": "HR", "TABLE_NAME": "EMPLOYEES", "COLUMN_NAME": "EMPLOYEE_ID", "DATA_TYPE": "NUMBER", "ORDINAL_POSITION": "1", "COLUMN_COMMENT": ""},
+	}
+	got := buildOracleTablesResult(&rows)
+	if len(*got) != 2 {
+		t.Fatalf("应聚合出 2 张表，实际 %d：%+v", len(*got), *got)
+	}
+	first := (*got)[0]
+	if first["table_schema"] != "HR" || first["table_name"] != "COUNTRIES" {
+		t.Fatalf("首行表名/模式错误：%+v", first)
+	}
+	cols, _ := first["columns"].(string)
+	if cols != "COUNTRY_ID$$CHAR$$Primary key@@COUNTRY_NAME$$VARCHAR2$$" {
+		t.Fatalf("列拼装错误：%q", cols)
+	}
+}
+
+// 小写列名（MySQL/PG 风格）与大小写混合都必须兼容，避免修好 Oracle 又打坏其它方言。
+func TestBuildOracleTablesResultMixedCaseColumns(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"table_schema": "hr", "table_name": "T1", "column_name": "c1", "data_type": "int", "column_comment": "a"},
+		{"Table_Schema": "hr", "Table_Name": "T2", "Column_Name": "c2", "Data_Type": "int", "Column_Comment": "b"},
+	}
+	got := buildOracleTablesResult(&rows)
+	if len(*got) != 2 {
+		t.Fatalf("应聚合出 2 张表，实际 %d：%+v", len(*got), *got)
+	}
+	if (*got)[0]["table_name"] != "T1" || (*got)[1]["table_name"] != "T2" {
+		t.Fatalf("表名解析错误：%+v", *got)
+	}
+}
+
+// 空结果必须返回非 nil 空切片（前端把 null 当成接口异常，[] 才是「暂无表」）。
+func TestBuildOracleTablesResultNilRows(t *testing.T) {
+	got := buildOracleTablesResult(nil)
+	if got == nil || *got == nil {
+		t.Fatal("空结果应为非 nil 空切片")
+	}
+	if len(*got) != 0 {
+		t.Fatalf("空结果长度应为 0，实际 %d", len(*got))
+	}
+}
