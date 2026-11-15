@@ -1,52 +1,26 @@
 <template>
   <a-modal :open="open" title="任务详情" width="60%" @cancel="handleCancel" :footer="null">
-    <div class="task-detail-wrapper">
-      <!-- SQL 全文：放在最前，用户点击详情 90% 场景就是看这条任务执行的 SQL -->
-      <a-card size="small" class="info-card">
-        <template #title>
-          <div class="card-title">
-            <FileSearchOutlined class="title-icon" />
-            <span>SQL 全文</span>
-          </div>
-        </template>
-        <div v-if="formData?.sql" class="code-wrapper">
-          <CodeMirror :initVal="formData.sql" height="220px" />
-        </div>
-        <a-empty v-else description="当前任务暂无 SQL 内容" />
-      </a-card>
-
-      <!-- 执行信息：SQL执行耗时 / 备份耗时 / 影响行数 -->
-      <a-card size="small" class="info-card">
-        <template #title>
-          <div class="card-title">
-            <ClockCircleOutlined class="title-icon" />
-            <span>执行信息</span>
-          </div>
-        </template>
-        <!-- 口径说明：这里的耗时只统计 SQL 在目标库上的执行本身，
-             不含定时排队等待、工单认领、连接建立与备份，避免与「工单端到端耗时」混淆 -->
-        <div class="cost-note">
-          <InfoCircleOutlined />
-          <span>耗时口径：仅统计 SQL 在目标库上的执行时间，不含定时等待、备份与工单流转</span>
-        </div>
+    <a-tabs v-model:activeKey="activeTab" class="task-detail-tabs">
+      <!-- 执行信息：耗时统计 + 导出文件信息 + 错误信息（均按原有条件渲染迁移） -->
+      <a-tab-pane key="info" tab="执行信息">
         <a-row :gutter="[16, 16]">
           <a-col :xs="24" :sm="12" :md="8">
             <div class="stat-item">
-              <a-statistic title="SQL执行耗时" :value="formData?.result?.execute_cost_time ?? '-'">
+              <a-statistic title="SQL执行耗时" :value="parseCostMs(formData?.result?.execute_cost_time) ?? '-'">
                 <template #prefix>
                   <ThunderboltOutlined style="color: #1890ff" />
                 </template>
-                <template #suffix v-if="formData?.result?.execute_cost_time">ms</template>
+                <template #suffix v-if="parseCostMs(formData?.result?.execute_cost_time) !== null">ms</template>
               </a-statistic>
             </div>
           </a-col>
           <a-col :xs="24" :sm="12" :md="8">
             <div class="stat-item">
-              <a-statistic title="备份耗时" :value="formData?.result?.backup_cost_time ?? '-'">
+              <a-statistic title="备份耗时" :value="parseCostMs(formData?.result?.backup_cost_time) ?? '-'">
                 <template #prefix>
                   <SaveOutlined style="color: #52c41a" />
                 </template>
-                <template #suffix v-if="formData?.result?.backup_cost_time">ms</template>
+                <template #suffix v-if="parseCostMs(formData?.result?.backup_cost_time) !== null">ms</template>
               </a-statistic>
             </div>
           </a-col>
@@ -64,111 +38,115 @@
             </div>
           </a-col>
         </a-row>
-      </a-card>
 
-      <!-- 导出文件信息 -->
-      <a-card v-if="formData?.sql_type === 'EXPORT'" size="small" class="info-card">
-        <template #title>
-          <div class="card-title">
-            <FileTextOutlined class="title-icon" />
+        <!-- 导出文件信息（EXPORT 任务） -->
+        <template v-if="formData?.sql_type === 'EXPORT'">
+          <div class="pane-section-title">
+            <FileTextOutlined class="section-icon" />
             <span>导出文件信息</span>
           </div>
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item label="文件名">
+              <a-typography-text copyable>
+                {{ formData.result.file_name || '-' }}
+              </a-typography-text>
+            </a-descriptions-item>
+            <a-descriptions-item label="文件大小">
+              <a-tag color="blue">{{ formatFileSize(formData?.result?.file_size) }}</a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="导出行数">
+              <a-tag color="green">{{ formData?.result?.export_rows || 0 }} 行</a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="文件加密秘钥">
+              <a @click="copyRecord(formData?.result?.encryption_key)">
+                {{ formData?.result?.encryption_key || '-' }}
+              </a>
+            </a-descriptions-item>
+            <a-descriptions-item label="文件下载路径">
+              <a v-if="formData?.result?.download_url" :href="formData?.result?.download_url" target="_blank"
+                class="download-link">
+                <DownloadOutlined /> 点击下载
+              </a>
+              <span v-else>-</span>
+            </a-descriptions-item>
+          </a-descriptions>
         </template>
-        <a-descriptions :column="1" bordered size="small">
-          <a-descriptions-item label="文件名">
-            <a-typography-text copyable>
-              {{ formData.result.file_name || '-' }}
-            </a-typography-text>
-          </a-descriptions-item>
-          <a-descriptions-item label="文件大小">
-            <a-tag color="blue">{{ formatFileSize(formData?.result?.file_size) }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="导出行数">
-            <a-tag color="green">{{ formData?.result?.export_rows || 0 }} 行</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="文件加密秘钥">
-            <a @click="copyRecord(formData?.result?.encryption_key)">
-              {{ formData?.result?.encryption_key || '-' }}
-            </a>
 
-          </a-descriptions-item>
-          <a-descriptions-item label="文件下载路径">
-            <a v-if="formData?.result?.download_url" :href="formData?.result?.download_url" target="_blank"
-              class="download-link">
-              <DownloadOutlined /> 点击下载
-            </a>
-            <span v-else>-</span>
-          </a-descriptions-item>
-        </a-descriptions>
-      </a-card>
-
-      <!-- 错误信息 -->
-      <a-card v-if="formData?.result?.error" size="small" class="info-card error-card">
-        <template #title>
-          <div class="card-title error-title">
-            <CloseCircleOutlined class="title-icon" />
+        <!-- 错误信息（执行失败时展示，置于统计之后） -->
+        <template v-if="formData?.result?.error">
+          <div class="pane-section-title error-title">
+            <CloseCircleOutlined class="section-icon error-icon" />
             <span>错误信息</span>
           </div>
-        </template>
-        <div class="code-wrapper">
-          <CodeMirror :initVal="formData.result.error" />
-        </div>
-      </a-card>
-
-      <!-- 执行日志 -->
-      <a-card v-if="formData?.result?.execute_log" size="small" class="info-card">
-        <template #title>
-          <div class="card-title">
-            <FileSearchOutlined class="title-icon" />
-            <span>执行日志</span>
+          <div class="code-wrapper">
+            <CodeMirror :initVal="formData.result.error" />
           </div>
         </template>
+      </a-tab-pane>
+
+      <!-- SQL 全文 -->
+      <a-tab-pane key="sql" tab="SQL 全文">
+        <div v-if="formData?.sql" class="sql-toolbar">
+          <a class="sql-copy-link" @click="copyRecord(formData.sql)">
+            <CopyOutlined />
+            复制
+          </a>
+        </div>
+        <div v-if="formData?.sql" class="code-wrapper">
+          <CodeMirror :initVal="formData.sql" height="220px" />
+        </div>
+        <a-empty v-else description="当前任务暂无 SQL 内容" />
+      </a-tab-pane>
+
+      <!-- 执行日志 -->
+      <a-tab-pane v-if="formData?.result?.execute_log" key="log" tab="执行日志">
         <div class="code-wrapper">
           <CodeMirror :initVal="formData.result.execute_log" :height="'350px'" />
         </div>
-      </a-card>
+      </a-tab-pane>
 
       <!-- 回滚 SQL -->
-      <a-card v-if="formData?.result?.rollback_sql" size="small" class="info-card">
-        <template #title>
-          <div class="card-title">
-            <RollbackOutlined class="title-icon" />
-            <span>回滚 SQL</span>
-          </div>
-        </template>
+      <a-tab-pane v-if="formData?.result?.rollback_sql" key="rollback" tab="回滚 SQL">
+        <div class="rollback-toolbar">
+          <a-typography-text class="rollback-hint" type="secondary">
+            备份时由 Binlog 自动生成，请复制后到「SQL 查询」人工执行
+          </a-typography-text>
+          <a class="rollback-copy-link" @click="copyRecord(formData.result.rollback_sql)">
+            <CopyOutlined />
+            复制
+          </a>
+        </div>
         <div class="code-wrapper">
           <CodeMirror :initVal="formData.result.rollback_sql" />
         </div>
-      </a-card>
+      </a-tab-pane>
+    </a-tabs>
 
-      <!-- Footer -->
-      <div class="modal-footer">
-        <a-button type="primary" @click="handleCancel">关闭</a-button>
-      </div>
+    <!-- Footer -->
+    <div class="modal-footer">
+      <a-button type="primary" @click="handleCancel">关闭</a-button>
     </div>
   </a-modal>
 </template>
 
 <script setup>
 import {
-  ClockCircleOutlined,
   ThunderboltOutlined,
   SaveOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   DownloadOutlined,
   CloseCircleOutlined,
-  FileSearchOutlined,
-  RollbackOutlined,
-  InfoCircleOutlined
+  CopyOutlined
 } from '@ant-design/icons-vue'
 import CodeMirror from '@/components/edit/Codemirror.vue'
 import { message } from 'ant-design-vue'
+import { ref, watch } from 'vue'
 import useClipboard from 'vue-clipboard3'
 
 const { toClipboard } = useClipboard()
 
-defineProps({
+const props = defineProps({
   open: Boolean,
 })
 
@@ -179,6 +157,15 @@ const formData = defineModel('modelValue', {
   type: Object,
   required: true
 })
+
+// 页签状态：每次打开弹窗回到「执行信息」
+const activeTab = ref('info')
+watch(
+  () => props.open,
+  (visible) => {
+    if (visible) activeTab.value = 'info'
+  },
+)
 
 // 复制：支持传入字符串或对象 { sqltext }
 const copyRecord = async (value) => {
@@ -207,80 +194,63 @@ const formatFileSize = (bytes) => {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
 }
+
+// 耗时字段归一：后端返回形如 "80.28588ms" 的字符串（也可能已是数字），
+// 这里提取数值并取整，单位 "ms" 统一由 suffix 提供，避免出现两个单位。
+const parseCostMs = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const n = parseFloat(String(value))
+  if (Number.isNaN(n)) return null
+  return Math.round(n)
+}
 </script>
 
 <style scoped>
-.task-detail-wrapper {
-  max-height: 70vh;
-  overflow-y: auto;
-  padding-right: 4px;
+/* 页签内容区不设滚动容器：由弹窗自身承载高度，避免内容区出现额外滚动条 */
+.task-detail-tabs :deep(.ant-tabs-content-holder) {
+  overflow: visible;
 }
 
-/* 自定义滚动条 */
-.task-detail-wrapper::-webkit-scrollbar {
-  width: 6px;
+/* SQL 全文：复制入口右对齐，不与代码区抢空间 */
+.sql-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
-.task-detail-wrapper::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 3px;
+.sql-copy-link {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.task-detail-wrapper::-webkit-scrollbar-thumb {
-  background: #bfbfbf;
-  border-radius: 3px;
+.sql-copy-link:hover {
+  opacity: 0.8;
 }
 
-.task-detail-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #999;
-}
-
-/* 卡片样式 */
-.info-card {
-  margin-bottom: 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s ease;
-}
-
-.info-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.info-card:last-of-type {
-  margin-bottom: 0;
-}
-
-/* 卡片标题 */
-.card-title {
+/* 执行信息页签内区块间距 */
+.pane-section-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 20px 0 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #262626;
 }
 
-.title-icon {
-  font-size: 16px;
+.section-icon {
+  font-size: 15px;
   color: #1890ff;
 }
 
-/* 错误卡片图标颜色 */
-.error-title .title-icon {
-  color: #ff4d4f;
+.error-title {
+  margin-bottom: 12px;
 }
 
-/* 耗时口径说明：紧贴统计项上方，避免"几十毫秒"被误读成工单端到端耗时 */
-.cost-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: #8c8c8c;
-  background: #fafafa;
-  border-radius: 4px;
+.error-icon {
+  color: #ff4d4f;
 }
 
 /* 统计项样式 */
@@ -339,9 +309,38 @@ const formatFileSize = (bytes) => {
   background: #fff;
 }
 
+/* 回滚 SQL：说明文字与复制入口一行排布 */
+.rollback-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.rollback-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.rollback-copy-link {
+  flex-shrink: 0;
+  margin-left: 16px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rollback-copy-link:hover {
+  opacity: 0.8;
+}
+
 /* Footer */
 .modal-footer {
-  margin-top: 24px;
+  margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid #f0f0f0;
   display: flex;
@@ -350,23 +349,9 @@ const formatFileSize = (bytes) => {
 
 /* 响应式调整 */
 @media (max-width: 768px) {
-  .task-detail-wrapper {
-    max-height: 60vh;
-  }
-
-  .card-title {
-    font-size: 14px;
-  }
-
-  :deep(.ant-descriptions-item-label) {
-    width: 100px;
-  }
-}
-
-@media (max-width: 768px) {
-  .task-detail-wrapper {
-    max-height: 62vh;
-    padding-right: 0;
+  /* 窄屏空间不足，隐藏说明文字保留复制入口 */
+  .rollback-hint {
+    display: none;
   }
 
   :deep(.ant-descriptions-item-label) {
@@ -375,10 +360,6 @@ const formatFileSize = (bytes) => {
 
   .stat-item {
     padding: 8px;
-  }
-
-  .info-card {
-    margin-bottom: 10px;
   }
 
   .code-wrapper :deep(pre) {

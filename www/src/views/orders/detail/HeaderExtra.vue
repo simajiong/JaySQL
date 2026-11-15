@@ -66,6 +66,12 @@
       重启
     </a-button>
 
+    <!-- 查看任务：任务页路由是隐藏的（无菜单入口），已生成过任务的工单
+         在此之前只能手敲 URL 到达；已完成工单的回滚 SQL 就存在任务详情里 -->
+    <a-button v-if="canViewTasks" size="small" @click="goOrderTasks">
+      查看任务
+    </a-button>
+
     <a-button
       v-if="canWithdraw"
       size="small"
@@ -409,6 +415,9 @@ const canApprove = computed(() => hasApprovePermission.value && progress.value =
 const canTransfer = computed(() => hasApprovePermission.value && progress.value === 'PENDING' && isApprover.value)
 const canExecute = computed(() => hasExecutePermission.value && progress.value === 'APPROVED' && isExecutor.value)
 const canRestart = computed(() => hasExecutePermission.value && progress.value === 'FAILED' && isExecutor.value)
+// 查看任务：工单已生成过任务（执行中/已完成/执行失败）即可进入任务页，无角色限制
+// （任务页路由本身挂 order.view 权限，与工单详情页同门槛）
+const canViewTasks = computed(() => ['EXECUTING', 'COMPLETED', 'FAILED'].includes(progress.value))
 // 撤回：与后端 WithdrawOrderService 口径一致，仅执行前（待预审/审批中/审批通过）且申请人本人
 const canWithdraw = computed(() =>
   hasSubmitPermission.value
@@ -642,6 +651,22 @@ const handleSubmit = useThrottleFn(async () => {
     uiData.modalLoading = false
   }
 })
+
+// 查看任务：直达任务页（隐藏路由）。跳转失败兜底与 genOrderTasks 同款
+// （发版后旧标签页懒加载旧 hash chunk 404 的场景）
+const goOrderTasks = async () => {
+  const target = {
+    name: 'orders.tasks',
+    params: { order_id: props.orderDetail?.order_id },
+  }
+  try {
+    await router.push(target)
+  } catch (navErr) {
+    console.warn('[orders] 跳转任务页失败，整页兜底:', navErr)
+    message.warning('页面跳转失败，正在刷新重试…')
+    window.location.assign(`/sql-workbench/orders/tasks/${props.orderDetail?.order_id}`)
+  }
+}
 
 const genOrderTasks = useThrottleFn(async () => {
   uiState.genOrderTasksLoading = true

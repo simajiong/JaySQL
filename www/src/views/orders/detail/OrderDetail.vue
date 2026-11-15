@@ -65,12 +65,27 @@
                 <template v-else-if="column.key === 'end_time'">
                   {{ taskStartEnd(record).end || '-' }}
                 </template>
+                <template v-else-if="column.key === 'backup'">
+                  <!-- 备份状态：与任务页同口径（backup_status 文案，缺失时回退 backup_cost_time） -->
+                  <span :class="['exec-backup-status', backupStatusClass(record)]">
+                    {{ backupStatusText(record) || '-' }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <a-space size="middle">
+                    <a class="exec-detail-link" @click="showTaskResult(record)">详情</a>
+                    <!-- 回滚 SQL 入口：仅备份成功（有回滚 SQL）的任务渲染，避免死链接 -->
+                    <a v-if="taskRollbackSql(record)" class="exec-rollback-link" @click="showTaskResult(record)">
+                      回滚 SQL
+                    </a>
+                  </a-space>
+                </template>
                 <template v-else-if="column.key === 'detail'">
                   <!-- 失败任务：完整错误原文截断后看不全，改为「失败」标签 + 「查看」入口，
                        点击打开抽屉展示结构化信息与可复制的完整原文 -->
-                  <span v-if="taskFailed(task)" class="exec-detail-failed">
+                  <span v-if="taskFailed(record)" class="exec-detail-failed">
                     <span class="exec-detail-failed-tag">失败</span>
-                    <a class="exec-detail-link" @click="openFailureDrawer(task)">查看</a>
+                    <a class="exec-detail-link" @click="openFailureDrawer(record)">查看</a>
                   </span>
                   <a-tooltip v-else :title="taskDetailFull(record)">
                     <span class="exec-detail-text">{{ taskDetail(record) || '-' }}</span>
@@ -317,6 +332,11 @@
       </div>
     </a-modal>
 
+    <!-- 任务详情弹窗：复用任务页同款 TaskResult（SQL 全文/执行信息/执行日志/回滚 SQL），
+         让「执行成功想回滚」的用户在工单详情页就能拿到回滚 SQL —— 任务页路由是隐藏的，
+         已完成的工单此前没有任何可点击入口能到达它 -->
+    <TaskResult :open="taskResultOpen" v-model:modelValue="taskResultData" @update:open="taskResultOpen = $event" />
+
     <!-- 执行失败详情抽屉：结构化展示失败原因，并给出真正可行的恢复出口 -->
     <a-drawer
       v-model:open="failureDrawerOpen"
@@ -369,6 +389,7 @@ import { message } from 'ant-design-vue'
 import { CaretRightOutlined, CheckCircleFilled, CloseCircleFilled, CopyOutlined, EyeOutlined, WarningFilled } from '@ant-design/icons-vue'
 import { buildStatementGroups, groupsAreUseful } from '../shared/statementGroups'
 import CodeMirror from '@/components/edit/Codemirror.vue'
+import TaskResult from '../tasks/TaskResult.vue'
 import HeaderContent from './HeaderContent.vue'
 import HeaderExtra from './HeaderExtra.vue'
 
@@ -1196,9 +1217,11 @@ watch(hasExecutionTasks, (val) => {
 const execResultColumns = [
   { title: '序号', key: 'seq', width: 64 },
   { title: 'SQL语句', dataIndex: 'sql', key: 'sql', ellipsis: true },
-  { title: '开始执行时间', key: 'start_time', width: 180 },
-  { title: '结束执行时间', key: 'end_time', width: 180 },
-  { title: '详情', key: 'detail', width: '22%', ellipsis: true },
+  { title: '开始执行时间', key: 'start_time', width: 170 },
+  { title: '结束执行时间', key: 'end_time', width: 170 },
+  { title: '备份状态', key: 'backup', width: 120 },
+  { title: '详情', key: 'detail', width: '18%', ellipsis: true },
+  { title: '操作', key: 'action', width: 130 },
 ]
 
 const execResultPagination = {
@@ -1235,6 +1258,39 @@ const taskDetailFull = (task) => {
   const result = parseTaskResult(task)
   const err = String(result.error || '').trim()
   return err || String(result.execute_log || '')
+}
+
+/* ===== 备份状态 / 回滚 SQL 入口 =====
+   数据全部来自 task.result（执行时由 Binlog 生成的回滚 SQL），零新增接口。
+   任务页早就有这套展示，这里把同一份数据在工单详情页透出。 */
+const taskRollbackSql = (task) => String(parseTaskResult(task).rollback_sql || '').trim()
+
+// 备份状态文案：与任务页 getBackupStatus 同口径
+const backupStatusText = (task) => {
+  const result = parseTaskResult(task)
+  if (result.backup_status) return String(result.backup_status)
+  if (result.backup_cost_time) return '备份成功'
+  return ''
+}
+
+const backupStatusClass = (task) => {
+  const text = backupStatusText(task)
+  if (!text) return 'is-none'
+  if (text.startsWith('备份成功')) return 'is-ok'
+  if (text.startsWith('备份失败')) return 'is-fail'
+  return 'is-skip'
+}
+
+// 任务详情弹窗（复用任务页 TaskResult 组件，两处口径天然一致）
+const taskResultOpen = ref(false)
+const taskResultData = ref({})
+
+const showTaskResult = (task) => {
+  taskResultData.value = {
+    ...task,
+    result: parseTaskResult(task),
+  }
+  taskResultOpen.value = true
 }
 
 /* ===== 执行失败：结构化诊断 + 恢复出口 =====
@@ -1599,7 +1655,28 @@ onMounted(async () => {
 }
 
 .exec-detail-link {
-  font-size: 12px;
+  font-size: 14px;
+  color: var(--gi-color-primary, #0f766e);
+}
+
+/* 回滚 SQL 入口：比「详情」更醒目（用户带着「要回滚」的目的而来），
+   仅在有回滚 SQL（备份成功）的任务上渲染 */
+.exec-rollback-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gi-color-primary, #0f766e);
+}
+
+/* 备份状态列：纯文字默认色（成功/跳过/未备份不着色），
+   仅备份失败保留红色——失败是语义告警，不能淹没在正文色里 */
+.exec-backup-status {
+  font-size: 14px;
+}
+
+.exec-backup-status.is-ok,
+.exec-backup-status.is-skip,
+.exec-backup-status.is-none {
+  color: inherit;
 }
 
 /* ===== 执行失败详情抽屉 ===== */
