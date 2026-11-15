@@ -100,6 +100,8 @@ func (s *ListTableOptionsService) Run() ([]tableOption, error) {
 		return listMySQLTables(s.C, cfg, plain, schemaPath)
 	case dasServices.IsPostgresFamily(string(cfg.DbType)):
 		return listPostgresTables(s.C, cfg, plain, schemaPath)
+	case dasServices.IsOracleFamilyCfg(string(cfg.DbType), cfg.ExtraConfig):
+		return listOracleTables(s.C, cfg, plain, schemaPath)
 	default:
 		return nil, fmt.Errorf("%s 暂不支持表级选择，可手工输入表名", cfg.DbType)
 	}
@@ -131,6 +133,53 @@ func listMySQLTables(c *gin.Context, cfg models.InsightInstances, plainPassword,
 		out = append(out, tableOption{Name: name, Comment: comment})
 	}
 	return out, rows.Err()
+}
+
+// listOracleTables Oracle 表清单（owner = 大写 schema）。
+// 用 all_objects 而非 all_tables：DBA 特权账号未被显式授权目标 schema 时
+// all_tables 拿不到行（见 das/services/schema_browser.go 同款回归）；
+// all_* 为空时降级 dba_*（连接账号有 DBA 权限的场景）。
+func listOracleTables(c *gin.Context, cfg models.InsightInstances, plainPassword, schema string) ([]tableOption, error) {
+	owner := strings.ToUpper(strings.TrimSpace(schema))
+	if !validIdentifier(owner) {
+		return nil, fmt.Errorf("Schema 名 %s 含非法字符", owner)
+	}
+	extra := oracleScanExtra{}
+	if len(cfg.ExtraConfig) > 0 {
+		_ = json.Unmarshal(cfg.ExtraConfig, &extra)
+	}
+	db := dasDao.OracleDB{
+		User: cfg.User, Password: plainPassword, Host: cfg.Hostname, Port: cfg.Port,
+		ServiceName: extra.ServiceName, Ctx: c.Request.Context(),
+	}
+	fetch := func(catalog string) (*[]string, *[]map[string]interface{}, error) {
+		// 别名不能用 comment（Oracle 保留字，ORA-00923），用 tab_comment
+		query := fmt.Sprintf(`SELECT o.object_name AS name, COALESCE(cc.comments, '') AS tab_comment
+			FROM %s_objects o
+			LEFT JOIN %s_tab_comments cc
+			  ON cc.owner = o.owner AND cc.table_name = o.object_name
+			WHERE o.owner = '%s' AND o.object_type = 'TABLE'
+			ORDER BY o.object_name`, catalog, catalog, owner)
+		return db.Query(query)
+	}
+	_, data, err := fetch("all")
+	if err == nil && (data == nil || len(*data) == 0) {
+		if _, dbaData, dbaErr := fetch("dba"); dbaErr == nil {
+			data = dbaData
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取表清单失败: %w", err)
+	}
+	out := make([]tableOption, 0, len(*data))
+	for _, row := range *data {
+		name := oracleRowString(row, "name")
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		out = append(out, tableOption{Name: name, Comment: oracleRowString(row, "tab_comment")})
+	}
+	return out, nil
 }
 
 func listPostgresTables(c *gin.Context, cfg models.InsightInstances, plainPassword, schemaPath string) ([]tableOption, error) {
@@ -207,6 +256,25 @@ func (s *ListColumnOptionsService) Run() ([]columnOption, error) {
 			return nil, fmt.Errorf("库/schema/表名含非法字符")
 		}
 		metas, err := postgresColumns(*buildPostgresDB(s.C, cfg, plain, databaseName), schemaName, table)
+		if err != nil {
+			return nil, fmt.Errorf("读取列元数据失败: %w", err)
+		}
+		return toColumnOptions(metas), nil
+	case dasServices.IsOracleFamilyCfg(string(cfg.DbType), cfg.ExtraConfig):
+		owner := strings.ToUpper(strings.TrimSpace(schemaPath))
+		upperTable := strings.ToUpper(strings.TrimSpace(table))
+		if !validIdentifier(owner) || !validIdentifier(upperTable) {
+			return nil, fmt.Errorf("Schema/表名含非法字符")
+		}
+		extra := oracleScanExtra{}
+		if len(cfg.ExtraConfig) > 0 {
+			_ = json.Unmarshal(cfg.ExtraConfig, &extra)
+		}
+		db := dasDao.OracleDB{
+			User: cfg.User, Password: plain, Host: cfg.Hostname, Port: cfg.Port,
+			ServiceName: extra.ServiceName, CurrentSchema: owner, Ctx: s.C.Request.Context(),
+		}
+		metas, err := oracleColumns(db, owner, upperTable)
 		if err != nil {
 			return nil, fmt.Errorf("读取列元数据失败: %w", err)
 		}

@@ -20,12 +20,12 @@ import (
 )
 
 // 敏感列自动发现（按需触发，非后台全库扫描）：
-//   1. information_schema 读列元数据（零数据访问）；
-//   2. 对候选列抽样 SELECT ... LIMIT 500（只读一次，单表耗时可预期）；
+//   1. 字典视图读列元数据（零数据访问）；
+//   2. 对候选列抽样 SELECT ... LIMIT 500 / FETCH FIRST 500 ROWS ONLY（只读一次，单表耗时可预期）；
 //   3. 判定器给结论，写 insight_datasec_columns（status=suggested）待人工确认。
 //
 // 性能红线：单次只扫指定表、LIMIT 500、元数据能定论的不采样。
-// 不支持自动发现的引擎（Oracle/SQLServer/ClickHouse）返回明确错误，而不是静默跳过。
+// 不支持自动发现的引擎（SQLServer/ClickHouse）返回明确错误，而不是静默跳过。
 
 const scanSampleLimit = 500
 
@@ -58,8 +58,10 @@ func (s *ScanTableService) Run() (interface{}, error) {
 		return s.scanMySQL(cfg, tables)
 	case dasServices.IsPostgresFamily(dbType):
 		return s.scanPostgres(cfg, tables)
+	case dasServices.IsOracleFamilyCfg(dbType, cfg.ExtraConfig):
+		return s.scanOracle(cfg, tables)
 	default:
-		return nil, fmt.Errorf("自动发现当前支持 MySQL 系 / PG 系数据库，%s 暂不支持（可手工配置列）", dbType)
+		return nil, fmt.Errorf("自动发现当前支持 MySQL 系 / PG 系 / Oracle，%s 暂不支持（可手工配置列）", dbType)
 	}
 }
 
@@ -231,6 +233,119 @@ func quoteDoubleCols(cols []string) string {
 		quoted = append(quoted, "\""+c+"\"")
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// ---------- Oracle（12c+；OceanBase Oracle 模式协议同源，随家族判定进入本分支） ----------
+
+type oracleScanExtra struct {
+	ServiceName string `json:"service_name"`
+}
+
+// oracleRowString 大小写无关地读取 Oracle DAO 返回 map 里的列值。
+// go-ora 驱动返回的列名全大写（TABLE_SCHEMA / COLUMN_NAME ...），
+// 与 das/services/tables.go getStringField 的回归背景同源，取值必须兼容两种写法。
+func oracleRowString(row map[string]interface{}, key string) string {
+	if v, ok := row[key]; ok && v != nil {
+		return toStringValue(v)
+	}
+	if v, ok := row[strings.ToUpper(key)]; ok && v != nil {
+		return toStringValue(v)
+	}
+	if v, ok := row[strings.ToLower(key)]; ok && v != nil {
+		return toStringValue(v)
+	}
+	// 兜底：列数很少，大小写无关扫描一次成本可忽略
+	for k, v := range row {
+		if strings.EqualFold(k, key) && v != nil {
+			return toStringValue(v)
+		}
+	}
+	return ""
+}
+
+func (s *ScanTableService) scanOracle(cfg models.InsightInstances, tables []string) (interface{}, error) {
+	plainPassword, err := secret.Decrypt(cfg.Password)
+	if err != nil {
+		return nil, err
+	}
+	// Schema 口径与 SQL 查询一致：Oracle 直接传 schema 名（owner），统一大写
+	schema := strings.ToUpper(strings.TrimSpace(s.SchemaName))
+	if schema == "" {
+		return nil, fmt.Errorf("请指定要扫描的 Schema")
+	}
+	if !validIdentifier(schema) {
+		return nil, fmt.Errorf("Schema 名 %s 含非法字符", schema)
+	}
+	extra := oracleScanExtra{}
+	if len(cfg.ExtraConfig) > 0 {
+		_ = json.Unmarshal(cfg.ExtraConfig, &extra)
+	}
+	db := dasDao.OracleDB{
+		User: cfg.User, Password: plainPassword, Host: cfg.Hostname, Port: cfg.Port,
+		ServiceName: extra.ServiceName, CurrentSchema: schema,
+		Ctx: s.C.Request.Context(),
+	}
+
+	results := make([]scanTableResult, 0, len(tables))
+	for _, table := range tables {
+		upperTable := strings.ToUpper(strings.TrimSpace(table))
+		metas, err := oracleColumns(db, schema, upperTable)
+		if err != nil {
+			return nil, fmt.Errorf("读取 %s.%s 列元数据失败: %w", schema, upperTable, err)
+		}
+		results = append(results, s.scanOneTable(strings.TrimSpace(s.InstanceID), schema, upperTable, metas,
+			func(cols []string) (*[]string, *[]map[string]interface{}, error) {
+				return db.Query(oracleSampleQuery(schema, upperTable, cols))
+			}))
+	}
+	return results, nil
+}
+
+// oracleSampleQuery 生成采样 SQL：schema/table/列名均已过白名单校验，双引号包裹安全；
+// Oracle 12c+ 用 FETCH FIRST 分页取前 500 行（列名大写存储，双引号原样包裹）。
+func oracleSampleQuery(schema, table string, cols []string) string {
+	return fmt.Sprintf("SELECT %s FROM %q.%q FETCH FIRST %d ROWS ONLY",
+		quoteDoubleCols(cols), schema, table, scanSampleLimit)
+}
+
+func oracleColumns(db dasDao.OracleDB, schema, table string) ([]scanColumnMeta, error) {
+	_, data, err := db.Query(oracleColumnsQuery(schema, table))
+	if err != nil {
+		return nil, err
+	}
+	metas := make([]scanColumnMeta, 0, 16)
+	if data == nil {
+		return metas, nil
+	}
+	for _, row := range *data {
+		metas = append(metas, scanColumnMeta{
+			Name:    oracleRowString(row, "column_name"),
+			Comment: oracleRowString(row, "column_comment"),
+			IsText:  oracleTypeIsText(oracleRowString(row, "data_type")),
+		})
+	}
+	return metas, nil
+}
+
+// oracleColumnsQuery 列元数据查询：注释从 all_col_comments 关联；
+// owner/table 均大写且已过白名单，可安全内联。
+func oracleColumnsQuery(schema, table string) string {
+	return fmt.Sprintf(`SELECT c.column_name AS column_name,
+			COALESCE(cc.comments, '') AS column_comment,
+			c.data_type AS data_type
+		FROM all_tab_columns c
+		LEFT JOIN all_col_comments cc
+		  ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
+		WHERE c.owner = '%s' AND c.table_name = '%s'
+		ORDER BY c.column_id`, schema, table)
+}
+
+func oracleTypeIsText(dataType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(dataType)) {
+	case "CHAR", "NCHAR", "VARCHAR", "VARCHAR2", "NVARCHAR2", "CLOB", "NCLOB", "LONG":
+		return true
+	}
+	return false
 }
 
 // ---------- 公共扫描逻辑 ----------
