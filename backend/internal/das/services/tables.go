@@ -332,20 +332,22 @@ type postgresExtraConfig struct {
 	SSLMode string `json:"sslmode"`
 }
 
-func (s *GetTablesService) getPostgresMetaData(instanceCfg *InstanceCfg) (data *[]map[string]interface{}, err error) {
-	parts := strings.SplitN(instanceCfg.Schema, ".", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("PostgreSQL 资源路径不合法")
-	}
-	databaseName := parts[0]
-	schemaName := parts[1]
-
-	query := fmt.Sprintf(`
+// postgresTablesQuery 构造 PG / KingbaseES 共用的「表清单 + 列拼接」SQL。
+//
+// 方言兼容约束（金仓实例展开 Tables 报「加载对象列表失败」的根因）：
+//   - 不能用 concat(a,'$$',b,'$$',c)：KingbaseES 的 sys.concat 只有
+//     concat(text, text) 定长两参重载（PG 是 variadic "any"），多参调用直接报
+//     function sys.concat(...) does not exist；
+//   - 改用 || 拼接：PG 与金仓行为一致，NULL 已由 coalesce 兜住，不存在传染；
+//   - information_schema 的 column_name / data_type 是域类型（sql_identifier /
+//     character_data），显式 ::text 让金仓能匹配到字符串算子。
+func postgresTablesQuery(schemaName string) string {
+	return fmt.Sprintf(`
 		SELECT 
 			cols.table_schema as table_schema,
 			cols.table_name as table_name,
 			string_agg(
-				concat(cols.column_name, '$$', cols.data_type, '$$', coalesce(col_description(cls.oid, cols.ordinal_position), '')),
+				cols.column_name::text || '$$' || cols.data_type::text || '$$' || coalesce(col_description(cls.oid, cols.ordinal_position), ''),
 				'@@' order by cols.ordinal_position
 			) as columns,
 			GREATEST(cls.reltuples::bigint, 0) as table_rows,
@@ -364,6 +366,17 @@ func (s *GetTablesService) getPostgresMetaData(instanceCfg *InstanceCfg) (data *
 			cols.table_schema, cols.table_name, cls.oid, cls.reltuples
 		ORDER BY cols.table_name
 	`, quoteStringLiteral(schemaName))
+}
+
+func (s *GetTablesService) getPostgresMetaData(instanceCfg *InstanceCfg) (data *[]map[string]interface{}, err error) {
+	parts := strings.SplitN(instanceCfg.Schema, ".", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("PostgreSQL 资源路径不合法")
+	}
+	databaseName := parts[0]
+	schemaName := parts[1]
+
+	query := postgresTablesQuery(schemaName)
 
 	cfg := postgresExtraConfig{}
 	if len(instanceCfg.ExtraConfig) > 0 {
@@ -485,6 +498,38 @@ type oracleTableExtraConfig struct {
 	ServiceName string `json:"service_name"`
 }
 
+// oracleTablesQuery 生成 Oracle/金仓 Oracle 模式的「schema 表 + 列元信息」查询。
+//
+// 回归背景（2026-11-12）：原 SQL 是一个重构残壳——内联子查询没有别名、外层还引用
+// 了不存在的 cc 前缀（cc.comments），Oracle 直接抛 ORA-00904，前端表现为
+// 「加载 "HR" 对象列表失败」。现简化为单层查询：*_tab_columns 主表 +
+// *_objects 过滤（object_type='TABLE'，排除视图/物化视图）+ *_col_comments
+// 左连接取列注释，输出列名 table_schema/table_name/columns 与 MySQL/PG 版本口径一致。
+//
+// catalog 取 "all" 或 "dba"：Oracle 的 all_* 字典只显示「当前用户有权限的对象」，
+// DBA 特权账号未被显式授权 HR 的表时 all_* 一行都拿不到（dba_segments/all_users
+// 却都可见），调用方需先查 all 再按空结果降级 dba（见 getOracleMetaData）。
+func oracleTablesQuery(catalog string, schema string) string {
+	return fmt.Sprintf(`
+		SELECT
+			c.owner AS table_schema,
+			c.table_name AS table_name,
+			c.column_name AS column_name,
+			c.data_type AS data_type,
+			c.column_id AS ordinal_position,
+			cc.comments AS column_comment
+		FROM %s_tab_columns c
+		JOIN %s_objects o
+			ON o.owner = c.owner AND o.object_name = c.table_name AND o.object_type = 'TABLE'
+		LEFT JOIN %s_col_comments cc
+			ON c.owner = cc.owner
+			AND c.table_name = cc.table_name
+			AND c.column_name = cc.column_name
+		WHERE c.owner = %s
+		ORDER BY c.table_name, c.column_id
+	`, catalog, catalog, catalog, quoteStringLiteral(schema))
+}
+
 func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]map[string]interface{}, err error) {
 	schemaName := strings.TrimSpace(instanceCfg.Schema)
 	if schemaName == "" {
@@ -504,35 +549,16 @@ func (s *GetTablesService) getOracleMetaData(instanceCfg *InstanceCfg) (data *[]
 		Ctx:           s.C.Request.Context(),
 	}
 
-	query := fmt.Sprintf(`
-		SELECT
-			c.owner as table_schema,
-			c.table_name as table_name,
-			c.column_name as column_name,
-			c.data_type as data_type,
-			c.column_id as ordinal_position,
-			cc.comments as column_comment
-		FROM (
-			SELECT
-				c.owner,
-				c.table_name,
-				c.column_name,
-				c.data_type,
-				c.column_id,
-				cc.comments
-			FROM all_tab_columns c
-			JOIN all_tables t
-				ON t.owner = c.owner AND t.table_name = c.table_name
-			LEFT JOIN all_col_comments cc
-				ON c.owner = cc.owner
-				AND c.table_name = cc.table_name
-				AND c.column_name = cc.column_name
-			WHERE c.owner = %s
-		)
-		ORDER BY table_name, ordinal_position
-	`, quoteStringLiteral(strings.ToUpper(schemaName)))
-
-	_, rows, err := db.Query(query)
+	// Oracle 字典可见性降级：先查 all_*（受授权限制），为空时降级 dba_*
+	// （DBA 账号可覆盖全部 schema）；dba_* 无权限报错不上抛，保留 all_* 的
+	// 空结果。与 schema_browser.go oracleCatalogRows 同一口径。
+	upperSchema := strings.ToUpper(schemaName)
+	_, rows, err := db.Query(oracleTablesQuery("all", upperSchema))
+	if err == nil && (rows == nil || len(*rows) == 0) {
+		if _, dbaRows, dbaErr := db.Query(oracleTablesQuery("dba", upperSchema)); dbaErr == nil {
+			rows = dbaRows
+		}
+	}
 	if err != nil {
 		global.App.Log.Error(err.Error())
 		return nil, err

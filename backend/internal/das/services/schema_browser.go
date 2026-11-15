@@ -439,20 +439,72 @@ func (t *schemaBrowserTarget) oracleQuery(query string) (*[]map[string]interface
 	return rows, nil
 }
 
+// oracleCatalogRows Oracle 字典可见性降级（与 objectmeta.go objectBaseOracle 同一口径）：
+// 先查 all_*（只显示当前用户有权限的对象），结果为空时降级 dba_*（DBA 账号可覆盖
+// 全部 schema）。dba_* 无权限报错（ORA-00942）不上抛——非 DBA 账号本就只能看
+// all_* 视野，保留 all_* 的结果返回。
+func (t *schemaBrowserTarget) oracleCatalogRows(build func(catalog string) string) (*[]map[string]interface{}, error) {
+	rows, err := t.oracleQuery(build("all"))
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil || len(*rows) == 0 {
+		if dbaRows, dbaErr := t.oracleQuery(build("dba")); dbaErr == nil {
+			return dbaRows, nil
+		}
+	}
+	return rows, nil
+}
+
 func (t *schemaBrowserTarget) oracleGroupObjects(group string) ([]BrowserNode, error) {
 	owner := quoteStringLiteral(strings.ToUpper(t.schemaName))
+	// 各分组都走 all_* → dba_* 降级：2026-11-12 生产实锤，DBA 特权账号能从
+	// dba_users/dba_segments 看到 HR 的用户与段（左侧模式树连大小都显示 4.8MB），
+	// 但未被显式授权 HR 的表时，all_objects 对 owner='HR' 一行都拿不到，
+	// Tables 分组被伪装成「该库下暂无表」（DBA1 同症状）。
+	// 错误一律上抛（all_* 查询报错就该让用户看到「加载失败」，而不是空列表）。
 	switch group {
 	case "tables":
-		return browserNameNodes("table", false, mustRows(t.oracleQuery(fmt.Sprintf(`SELECT table_name AS name FROM all_tables WHERE owner = %s ORDER BY table_name`, owner)))), nil
+		rows, err := t.oracleCatalogRows(func(catalog string) string {
+			return fmt.Sprintf(`SELECT object_name AS name FROM %s_objects WHERE owner = %s AND object_type = 'TABLE' ORDER BY object_name`, catalog, owner)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return browserNameNodes("table", false, rows), nil
 	case "views":
 		// 视图 + 物化视图统一归到 Views 分组
-		return browserNameNodes("view", false, mustRows(t.oracleQuery(fmt.Sprintf(`SELECT view_name AS name FROM all_views WHERE owner = %s UNION ALL SELECT mview_name AS name FROM all_mviews WHERE owner = %s ORDER BY name`, owner, owner)))), nil
+		rows, err := t.oracleCatalogRows(func(catalog string) string {
+			return fmt.Sprintf(`SELECT view_name AS name FROM %s_views WHERE owner = %s UNION ALL SELECT mview_name AS name FROM %s_mviews WHERE owner = %s ORDER BY name`, catalog, owner, catalog, owner)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return browserNameNodes("view", false, rows), nil
 	case "procedures":
-		return browserNameNodes("procedure", true, mustRows(t.oracleQuery(fmt.Sprintf(`SELECT object_name AS name FROM all_objects WHERE owner = %s AND object_type = 'PROCEDURE' ORDER BY object_name`, owner)))), nil
+		rows, err := t.oracleCatalogRows(func(catalog string) string {
+			return fmt.Sprintf(`SELECT object_name AS name FROM %s_objects WHERE owner = %s AND object_type = 'PROCEDURE' ORDER BY object_name`, catalog, owner)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return browserNameNodes("procedure", true, rows), nil
 	case "functions":
-		return browserNameNodes("function", true, mustRows(t.oracleQuery(fmt.Sprintf(`SELECT object_name AS name FROM all_objects WHERE owner = %s AND object_type = 'FUNCTION' ORDER BY object_name`, owner)))), nil
+		rows, err := t.oracleCatalogRows(func(catalog string) string {
+			return fmt.Sprintf(`SELECT object_name AS name FROM %s_objects WHERE owner = %s AND object_type = 'FUNCTION' ORDER BY object_name`, catalog, owner)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return browserNameNodes("function", true, rows), nil
 	case "triggers":
-		return browserNameNodes("trigger", true, mustRows(t.oracleQuery(fmt.Sprintf(`SELECT trigger_name AS name FROM all_triggers WHERE owner = %s ORDER BY trigger_name`, owner)))), nil
+		rows, err := t.oracleCatalogRows(func(catalog string) string {
+			return fmt.Sprintf(`SELECT trigger_name AS name FROM %s_triggers WHERE owner = %s ORDER BY trigger_name`, catalog, owner)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return browserNameNodes("trigger", true, rows), nil
 	}
 	return []BrowserNode{}, nil
 }
