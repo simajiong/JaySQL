@@ -1221,7 +1221,8 @@ const isOracleFamily = (family) => family === FAMILY_ORACLE
 const isClickHouseFamily = (family) => family === FAMILY_CLICKHOUSE
 
 const currentTabLoading = computed(() => !!runtime.tableLoadingByTab[uiData.activeKey])
-const EDITOR_HEIGHT_FLOOR = 120
+// 最小高度 = 一行 SQL（与 ConsoleIndex MIN_EDITOR_HEIGHT 一致，见其注释）
+const EDITOR_HEIGHT_FLOOR = 26
 const editorHeightPx = computed(() => {
   const raw = Number(props.editorHeight)
   const safe = Number.isFinite(raw) && raw > 0 ? raw : 280

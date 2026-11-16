@@ -865,7 +865,9 @@ const editResultNoticeInstance = () => {
 }
 
 const EDITOR_HEIGHT_STORAGE_KEY = 'das#editorHeight'
-const MIN_EDITOR_HEIGHT = 120
+// 最小高度 = 一行 SQL：13px 字号 × 1.6 行高 ≈ 21px + 编辑器容器边框 2px，
+// 留 3px 余量取 26（与 ConsoleRight EDITOR_HEIGHT_FLOOR 保持一致）
+const MIN_EDITOR_HEIGHT = 26
 const MIN_RESULT_HEIGHT = 80
 const editorHeightRatio = ref(DEFAULT_EDITOR_RATIO)
 
