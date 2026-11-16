@@ -272,7 +272,7 @@
                   role="separator"
                   aria-label="调整编辑区与结果区高度"
                   tabindex="0"
-                  @mousedown="startWorkspaceResize"
+                  @pointerdown="startWorkspaceResize"
                   @keydown.up.prevent="adjustEditorHeight(-20)"
                   @keydown.down.prevent="adjustEditorHeight(20)"
                 ></div>
@@ -2348,8 +2348,17 @@ const getWorkspaceMetrics = () => {
   }
   const topbarHeight = workspaceEl.querySelector('.console-topbar')?.getBoundingClientRect().height || 0
   const resizerHeight = workspaceEl.querySelector('.workspace-resizer')?.getBoundingClientRect().height || 0
-  const editorChromeHeight = 2
-  const availableHeight = Math.max(0, Math.floor(workspaceHeight - topbarHeight - resizerHeight - editorChromeHeight))
+  // 编辑卡片「除编辑器内容外的 chrome」（topbar + 提示行 + wrap 内边距 + 边框）不再逐项估算：
+  // 旧实现 editorChromeHeight = 2 只算了边框，漏掉 hint-row 与 20px 上下 padding 约 44px，
+  // availableHeight 偏大 → 「拖到最大」时结果区被压到 MIN_RESULT_HEIGHT 之下、上下限失真。
+  // 改为直接实测：卡片总高 − 编辑器内容高，两者同步变化，差值在拖拽全程恒定。
+  const editorCardEl = workspaceEl.querySelector('.console-editor-card')
+  const editorContentH = editorCardEl?.querySelector('.cm-wrapper')?.getBoundingClientRect().height || 0
+  let editorChromeHeight = topbarHeight + 2
+  if (editorCardEl && editorContentH > 0) {
+    editorChromeHeight = Math.max(0, editorCardEl.getBoundingClientRect().height - editorContentH)
+  }
+  const availableHeight = Math.max(0, Math.floor(workspaceHeight - resizerHeight - editorChromeHeight))
   if (availableHeight >= MIN_EDITOR_HEIGHT + MIN_RESULT_HEIGHT) {
     return {
       availableHeight,
@@ -2428,6 +2437,12 @@ const adjustEditorHeight = (delta) => {
 let resizeStartY = 0
 let resizeStartHeight = 0
 let isResizingWorkspace = false
+// Pointer Capture 持有的元素与 pointerId：拖拽期间把 pointermove/pointerup 强制
+// 派发到 resizer 元素本身，鼠标移出浏览器窗口松手（Chrome 在窗口外不派发 mouseup，
+// 旧实现 isResizingWorkspace 从此卡 true，之后任何鼠标移动都会接管编辑区高度，
+// 表现为「拖拽失灵、高度乱跳、无法拖到预期位置」）也能可靠收到 pointerup/pointercancel。
+let resizePointerEl = null
+let resizePointerId = null
 
 const handleWorkspaceResizeMove = (event) => {
   if (!isResizingWorkspace) return
@@ -2456,8 +2471,14 @@ const stopWorkspaceResize = () => {
       document.body.style.webkitUserSelect = ''
     }
   }
-  document.removeEventListener('mousemove', handleWorkspaceResizeMove)
-  document.removeEventListener('mouseup', stopWorkspaceResize)
+  document.removeEventListener('pointermove', handleWorkspaceResizeMove)
+  document.removeEventListener('pointerup', stopWorkspaceResize)
+  document.removeEventListener('pointercancel', stopWorkspaceResize)
+  if (resizePointerEl && resizePointerId != null) {
+    try { resizePointerEl.releasePointerCapture(resizePointerId) } catch (_) {}
+  }
+  resizePointerEl = null
+  resizePointerId = null
   // #region debug-point O:workspace-resize-stop
   sendDebugEvent('O', 'ConsoleIndex.vue:stopWorkspaceResize', 'workspace resize stop', {
     finalEditorHeight: uiData.editorHeight,
@@ -2467,6 +2488,8 @@ const stopWorkspaceResize = () => {
 
 const startWorkspaceResize = (event) => {
   if (typeof document === 'undefined') return
+  // 只响应主键，右键/中键误触不进入拖拽
+  if (event.button !== undefined && event.button !== 0) return
   isResizingWorkspace = true
   resizeStartY = event.clientY
   resizeStartHeight = uiData.editorHeight
@@ -2480,8 +2503,16 @@ const startWorkspaceResize = (event) => {
       document.body.style.webkitUserSelect = 'none'
     }
   }
-  document.addEventListener('mousemove', handleWorkspaceResizeMove)
-  document.addEventListener('mouseup', stopWorkspaceResize)
+  // Pointer Capture：即使指针移出窗口/移到 iframe 上，pointerup/pointercancel
+  // 仍会派发到 resizer，拖拽状态必然被释放；pointercancel（触控手势打断等）同样走 stop。
+  resizePointerEl = event.currentTarget || null
+  resizePointerId = event.pointerId ?? null
+  if (resizePointerEl?.setPointerCapture && resizePointerId != null) {
+    try { resizePointerEl.setPointerCapture(resizePointerId) } catch (_) {}
+  }
+  document.addEventListener('pointermove', handleWorkspaceResizeMove)
+  document.addEventListener('pointerup', stopWorkspaceResize)
+  document.addEventListener('pointercancel', stopWorkspaceResize)
   // #region debug-point P:workspace-resize-start
   sendDebugEvent('P', 'ConsoleIndex.vue:startWorkspaceResize', 'workspace resize start', {
     clientY: event.clientY,
@@ -3491,6 +3522,8 @@ const renderExecutionMessage = (value) => {
   position: relative;
   overflow: hidden;
   z-index: 1;
+  /* Pointer Capture 拖拽需要：阻止触屏/触控板手势（滚动、文字选择）打断拖拽序列 */
+  touch-action: none;
   transition: background-color 0.2s ease;
 }
 
