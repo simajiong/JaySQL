@@ -2945,7 +2945,6 @@ const renderExecutionMessage = (value) => {
   border-radius: 10px 10px 0 0;
   background: rgba(255, 255, 255, 0.38);
   background-clip: padding-box;
-  /* 文字恒定中性色，不随环境色变化（环境标识由背景承担） */
   color: rgba(15, 23, 42, 0.70);
   cursor: pointer;
   transition: color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease,
@@ -2962,15 +2961,11 @@ const renderExecutionMessage = (value) => {
   z-index: 4;
   margin-top: 1px;
   margin-bottom: 0;
-  /* 背景与【环境管理】中该实例的环境颜色保持一致（原色实底）；
-     无环境绑定时回退白底 + 中性边框（原视觉） */
-  border-color: var(--console-tab-env-color, var(--console-border-color));
-  border-bottom-color: var(--console-tab-env-color, #ffffff);
+  border-color: var(--console-border-color);
+  border-bottom-color: #ffffff;
   border-radius: 10px 10px 0 0;
-  background: var(--console-tab-env-color, #ffffff);
-  /* 实底环境色上深色文字对比不足，激活态文字自动取环境对比色
-     （getContrastTextColor：红/绿底 → 白字），无环境时仍为中性深色 */
-  color: var(--console-tab-env-active-text, rgba(15, 23, 42, 0.92));
+  background: #ffffff;
+  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.92));
   box-shadow: none;
 }
 
@@ -3058,12 +3053,8 @@ const renderExecutionMessage = (value) => {
 .workspace-tab-pin {
   flex: 0 0 auto;
   font-size: 11px;
+  /* 图钉不参与环境色：与非当前 tab 实例名同一中性色 */
   color: rgba(15, 23, 42, 0.88);
-}
-
-/* 激活 tab 为实底环境色时，图钉继承对比色文字（白字），否则深色在红/绿底上看不清 */
-.workspace-tab-item.is-active .workspace-tab-pin {
-  color: inherit;
 }
 
 /* tab 上的收藏 / 刷新资源树工具按钮（从对象树实例节点迁移而来） */
@@ -3084,18 +3075,13 @@ const renderExecutionMessage = (value) => {
   border: none;
   border-radius: 4px;
   background: transparent;
-  /* 收藏/刷新等工具按钮固定中性色（与非当前 tab 实例名一致），
-     激活 tab 为实底环境色时继承对比色文字 */
+  /* 收藏/刷新等工具按钮不参与环境色：固定中性色（与非当前 tab 实例名一致） */
   color: rgba(15, 23, 42, 0.88);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
   opacity: 1;
   transition: opacity 0.15s ease, background-color 0.15s ease;
-}
-
-.workspace-tab-item.is-active .workspace-tab-tool-btn {
-  color: inherit;
 }
 
 .workspace-tab-tool-btn:hover {
@@ -3279,15 +3265,11 @@ const renderExecutionMessage = (value) => {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  /* 关闭按钮固定中性色；激活 tab 为实底环境色时继承对比色文字 */
+  /* 关闭按钮不参与环境色：与非当前 tab 实例名同一中性色 */
   color: rgba(15, 23, 42, 0.88);
   cursor: pointer;
   opacity: 0;
   transition: all 0.15s ease;
-}
-
-.workspace-tab-item.is-active .workspace-tab-close {
-  color: inherit;
 }
 
 .workspace-tab-item:hover .workspace-tab-close,
