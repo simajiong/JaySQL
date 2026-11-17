@@ -2945,8 +2945,8 @@ const renderExecutionMessage = (value) => {
   border-radius: 10px 10px 0 0;
   background: rgba(255, 255, 255, 0.38);
   background-clip: padding-box;
-  /* 文字跟随实例环境色：非激活用弱化版（≈72%），无环境时回退中性深色 */
-  color: var(--console-tab-env-text-soft, rgba(15, 23, 42, 0.70));
+  /* 文字恒定中性色，不随环境色变化（环境标识由背景承担） */
+  color: rgba(15, 23, 42, 0.70);
   cursor: pointer;
   transition: color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease,
     border-color 0.18s ease;
@@ -2955,7 +2955,7 @@ const renderExecutionMessage = (value) => {
 .workspace-tab-item:hover {
   background: rgba(255, 255, 255, 0.62);
   border-color: rgba(15, 23, 42, 0.16);
-  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.88));
+  color: rgba(15, 23, 42, 0.88);
 }
 
 .workspace-tab-item.is-active {
@@ -2963,10 +2963,12 @@ const renderExecutionMessage = (value) => {
   margin-top: 1px;
   margin-bottom: 0;
   border-color: var(--console-border-color);
-  border-bottom-color: #ffffff;
+  /* 背景跟随实例环境色（淡色底 + 同色底边），无环境时回退白色；
+     底边与背景同色以保持「tab 与下方编辑区融合」的视觉效果 */
+  border-bottom-color: var(--console-tab-env-soft-bg, #ffffff);
   border-radius: 10px 10px 0 0;
-  background: #ffffff;
-  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.92));
+  background: var(--console-tab-env-soft-bg, #ffffff);
+  color: rgba(15, 23, 42, 0.92);
   box-shadow: none;
 }
 

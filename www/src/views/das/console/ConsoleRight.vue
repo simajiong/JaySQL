@@ -1706,8 +1706,6 @@ const getPaneEnvironmentStyle = (pane) => {
     '--console-tab-env-soft-bg': appendHexAlpha(env.color, '14'),
     '--console-tab-env-soft-border': appendHexAlpha(env.color, '40'),
     '--console-tab-env-text': env.color,
-    // 非激活 tab 的弱化文字色（≈72% 透明），对应无环境时 rgba(15,23,42,0.70) 的层级
-    '--console-tab-env-text-soft': appendHexAlpha(env.color, 'B8'),
     '--console-tab-env-active-text': getContrastTextColor(env.color),
     '--console-tab-env-active-shadow': appendHexAlpha(env.color, '66'),
   }
