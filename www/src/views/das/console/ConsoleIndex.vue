@@ -2945,7 +2945,8 @@ const renderExecutionMessage = (value) => {
   border-radius: 10px 10px 0 0;
   background: rgba(255, 255, 255, 0.38);
   background-clip: padding-box;
-  color: rgba(15, 23, 42, 0.70);
+  /* 文字跟随实例环境色：非激活用弱化版（≈72%），无环境时回退中性深色 */
+  color: var(--console-tab-env-text-soft, rgba(15, 23, 42, 0.70));
   cursor: pointer;
   transition: color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease,
     border-color 0.18s ease;
@@ -2954,7 +2955,7 @@ const renderExecutionMessage = (value) => {
 .workspace-tab-item:hover {
   background: rgba(255, 255, 255, 0.62);
   border-color: rgba(15, 23, 42, 0.16);
-  color: rgba(15, 23, 42, 0.88);
+  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.88));
 }
 
 .workspace-tab-item.is-active {
