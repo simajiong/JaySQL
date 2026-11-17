@@ -1757,6 +1757,36 @@ const restoreKeysAfterRefresh = (rootKeyStr) => {
   }
 }
 
+// 浏览器式刷新：刷新后沿「刷新前已展开」的路径逐层重建子级数据。
+// 根刷新会用全新节点替换 children（childrenLoaded=false），若只把展开键还原，
+// 会出现「箭头仍是展开态、内容却塌陷」的割裂体验；这里按展开键把每层子级
+// 重新取数重建，保证刷新前后视觉状态一致（展开的照旧展开且内容可见）。
+const refreshExpandedDescendants = async (parentNodes, expandedSet, opts = {}) => {
+  const nextParents = []
+  for (const parentNode of parentNodes || []) {
+    const children = Array.isArray(parentNode.children) ? parentNode.children : []
+    for (const childNode of children) {
+      if (!childNode || childNode.isLeaf) continue
+      if (!expandedSet.has(String(childNode.key))) continue
+      try {
+        // userTriggered=false：库清单重采只在根刷新时做一次，深层节点只重建子级，
+        // 避免把一次刷新放大成对目标库的连续采集
+        await refreshResourceNodeChildren(childNode, { ...opts, userTriggered: false })
+      } catch {
+        // 单个节点重建失败不阻塞其余路径；该分支的展开键会在
+        // restoreKeysAfterRefresh 中因新树中不存在而被过滤，视觉上表现为收起（可接受降级）
+        continue
+      }
+      if (childNode.childrenLoaded || (Array.isArray(childNode.children) && childNode.children.length)) {
+        nextParents.push(childNode)
+      }
+    }
+  }
+  if (nextParents.length) {
+    await refreshExpandedDescendants(nextParents, expandedSet, opts)
+  }
+}
+
 const handleToolbarRefreshClick = async (_event, force = false) => {
   const instanceId = uiData.selectedInstanceId
   if (!instanceId) return
@@ -1798,6 +1828,12 @@ const handleToolbarRefreshClick = async (_event, force = false) => {
     const refreshed = await refreshResourceNodeChildren(rootNode, { userTriggered: true })
     if (refreshed) {
       uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
+      // 浏览器式刷新：先按刷新前展开键重建展开路径上的子级，再还原 keys，
+      // 保证深层展开键在新树中已存在、不会被误过滤
+      await refreshExpandedDescendants(
+        Array.isArray(rootNode.children) ? rootNode.children : [],
+        new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
+      )
       restoreKeysAfterRefresh(String(instanceId))
       const dur = Date.now() - startedAt
       showMessage('success', force ? `强制同步完成 · 耗时 ${dur}ms` : (dur > 2000 ? `刷新成功 · 耗时 ${dur}ms` : '刷新成功'))
@@ -1838,6 +1874,10 @@ const handleReloadTree = async () => {
     const refreshed = await refreshResourceNodeChildren(rootNode, { userTriggered: true })
     if (refreshed) {
       uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
+      await refreshExpandedDescendants(
+        Array.isArray(rootNode.children) ? rootNode.children : [],
+        new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
+      )
       restoreKeysAfterRefresh(String(uiData.selectedInstanceId))
       showMessage('success', '刷新成功')
     }
@@ -1878,6 +1918,10 @@ const handleReloadTreeForInstance = async (nodeRecord) => {
     const refreshed = await refreshResourceNodeChildren(rootNode, { userTriggered: true })
     if (refreshed) {
       uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
+      await refreshExpandedDescendants(
+        Array.isArray(rootNode.children) ? rootNode.children : [],
+        new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
+      )
       restoreKeysAfterRefresh(String(instanceId))
       showMessage('success', '刷新成功')
     }
@@ -3735,9 +3779,16 @@ const onContextMenuClick = async (node, menuKey) => {
       return
     }
     const loadingMessage = message.loading('刷新中...', 0)
+    // 浏览器式刷新：记录刷新前展开键，刷新后沿展开路径逐层重建子级，
+    // 避免出现「箭头仍为展开态、内容却塌陷」的割裂体验
+    const snapshotExpandedSet = new Set((uiData.instanceResourceExpandedKeys || []).map(String))
     try {
       const refreshed = await refreshResourceNodeChildren(node, { userTriggered: true })
       if (refreshed) {
+        await refreshExpandedDescendants(
+          Array.isArray(node.children) ? node.children : [],
+          snapshotExpandedSet,
+        )
         uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
         message.success('刷新成功')
       }
