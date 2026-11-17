@@ -1762,6 +1762,8 @@ const restoreKeysAfterRefresh = (rootKeyStr) => {
 // 会出现「箭头仍是展开态、内容却塌陷」的割裂体验；这里按展开键把每层子级
 // 重新取数重建，保证刷新前后视觉状态一致（展开的照旧展开且内容可见）。
 const refreshExpandedDescendants = async (parentNodes, expandedSet, opts = {}) => {
+  // 注意：parentNodes 必须传「待刷新节点的父层」（如根节点或被右键刷新的节点本身），
+  // helper 遍历的是 parents.children，靠展开键命中需要重建的那一层。
   const nextParents = []
   for (const parentNode of parentNodes || []) {
     const children = Array.isArray(parentNode.children) ? parentNode.children : []
@@ -1831,7 +1833,7 @@ const handleToolbarRefreshClick = async (_event, force = false) => {
       // 浏览器式刷新：先按刷新前展开键重建展开路径上的子级，再还原 keys，
       // 保证深层展开键在新树中已存在、不会被误过滤
       await refreshExpandedDescendants(
-        Array.isArray(rootNode.children) ? rootNode.children : [],
+        [rootNode],
         new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
       )
       restoreKeysAfterRefresh(String(instanceId))
@@ -1875,7 +1877,7 @@ const handleReloadTree = async () => {
     if (refreshed) {
       uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
       await refreshExpandedDescendants(
-        Array.isArray(rootNode.children) ? rootNode.children : [],
+        [rootNode],
         new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
       )
       restoreKeysAfterRefresh(String(uiData.selectedInstanceId))
@@ -1919,7 +1921,7 @@ const handleReloadTreeForInstance = async (nodeRecord) => {
     if (refreshed) {
       uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
       await refreshExpandedDescendants(
-        Array.isArray(rootNode.children) ? rootNode.children : [],
+        [rootNode],
         new Set((uiData.preRefreshSnapshotExpandedKeys || []).map(String)),
       )
       restoreKeysAfterRefresh(String(instanceId))
@@ -3786,7 +3788,7 @@ const onContextMenuClick = async (node, menuKey) => {
       const refreshed = await refreshResourceNodeChildren(node, { userTriggered: true })
       if (refreshed) {
         await refreshExpandedDescendants(
-          Array.isArray(node.children) ? node.children : [],
+          [node],
           snapshotExpandedSet,
         )
         uiData.instanceResourceTreeData = [...uiData.instanceResourceTreeData]
