@@ -2987,6 +2987,12 @@ const renderExecutionMessage = (value) => {
   height: 28px;
   margin-bottom: 3px;
   border-radius: 8px;
+  /* 非当前 tab 文字用浅灰色，与环境色解耦（环境色仅由激活 tab 文字与按钮图标承担） */
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.workspace-tab-item:not(.is-active):hover {
+  color: rgba(100, 116, 139, 0.95);
 }
 
 .workspace-tab-item:not(.is-active)::before {
@@ -3075,13 +3081,13 @@ const renderExecutionMessage = (value) => {
   border: none;
   border-radius: 4px;
   background: transparent;
-  /* 收藏/刷新等工具按钮不参与环境色：固定中性色（与非当前 tab 实例名一致） */
-  color: rgba(15, 23, 42, 0.88);
+  /* 收藏/刷新等工具按钮跟随环境色（与激活 tab 文字一致），未绑定环境时回退中性色 */
+  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.88));
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
   opacity: 1;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .workspace-tab-tool-btn:hover {
@@ -3089,8 +3095,8 @@ const renderExecutionMessage = (value) => {
 }
 
 .workspace-tab-tool-btn.is-fav {
-  /* 已收藏用固定的收藏黄做状态标记，与环境色解耦 */
-  color: #faad14;
+  /* 已收藏用 StarFilled 实心图标表达状态，颜色仍跟随环境色 */
+  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.88));
 }
 
 .tab-tooltip-card {
@@ -3265,8 +3271,8 @@ const renderExecutionMessage = (value) => {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  /* 关闭按钮不参与环境色：与非当前 tab 实例名同一中性色 */
-  color: rgba(15, 23, 42, 0.88);
+  /* 关闭按钮跟随环境色（与激活 tab 文字一致），未绑定环境时回退中性色 */
+  color: var(--console-tab-env-text, rgba(15, 23, 42, 0.88));
   cursor: pointer;
   opacity: 0;
   transition: all 0.15s ease;
