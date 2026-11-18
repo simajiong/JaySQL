@@ -83,10 +83,6 @@
               <span>{{ getTaskEndTime(record) }}</span>
             </template>
 
-            <template v-else-if="column.key === 'result'">
-              <span>{{ getExecutionDetail(record) }}</span>
-            </template>
-
             <template v-else-if="column.key === 'backup'">
               <span>{{ getBackupStatus(record) }}</span>
             </template>
@@ -286,7 +282,6 @@ const uiData = reactive({
     { title: '开始时间', dataIndex: 'started_at', key: 'started_at', width: 180 },
     { title: '结束时间', dataIndex: 'finished_at', key: 'finished_at', width: 180 },
     { title: '执行状态', dataIndex: 'progress', key: 'progress', width: 120 },
-    { title: '执行详情', key: 'result', ellipsis: true, width: 240 },
     { title: '备份状态', key: 'backup', width: 120 },
     { title: '操作', key: 'action', width: 160, fixed: 'right' },
   ],
@@ -315,19 +310,6 @@ const parseResult = (record) => {
   } catch {
     return {}
   }
-}
-
-// 执行详情必须与执行状态同口径：默认文案由 progress 决定，
-// 只有任务真的到了终态才能显示「执行成功」，避免待执行任务
-// 在 result 为空时被兜底文案误标成「执行成功」
-const getExecutionDetail = (record) => {
-  const result = parseResult(record)
-  const detail = result.error || result.execute_log
-  if (detail) return detail
-  if (record.progress === 'COMPLETED') return '执行成功'
-  if (record.progress === 'FAILED') return '执行失败'
-  if (record.progress === 'EXECUTING') return '执行中…'
-  return '-'
 }
 
 const getBackupStatus = (record) => {
