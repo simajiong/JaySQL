@@ -69,9 +69,7 @@
             </template>
 
             <template v-else-if="column.key === 'sql'">
-              <a-tooltip v-if="rowTargetName(record)" :title="`属于对象 ${rowTargetName(record)} 的建表链任务`">
-                <span class="task-target-tag">{{ rowTargetName(record) }}</span>
-              </a-tooltip>
+              <!-- 单行省略展示，点击弹窗查看完整 SQL；不再显示建表链灰色标注 -->
               <a class="sql-link" @click="showSqlDetail(record)">
                 {{ record.sql }}
               </a>
@@ -280,8 +278,8 @@ const uiData = reactive({
   tableData: [],
   tableColumns: [
     { title: '行号', key: 'index', width: 72, fixed: 'left' },
-    // SQL 文本完整展示：不定宽、不省略，长 SQL 自动换行
-    { title: 'SQL文本', dataIndex: 'sql', key: 'sql' },
+    // SQL 文本列：单行省略展示（与工单详情页 SQL语句列同款），点击弹窗查看完整内容
+    { title: 'SQL文本', dataIndex: 'sql', key: 'sql', ellipsis: true },
     // 任务级真实执行时间（started_at/finished_at 由执行循环随进度流转写入）：
     // created_at 是任务生成时刻，updated_at 是行最后更新时刻，拿它们当开始/结束
     // 时间会让待执行任务显示成「开始=结束」的假象
@@ -351,13 +349,7 @@ const getTaskEndTime = (record) => {
   return '-'
 }
 
-/* 对象归属标注：Oracle 一条建表链（CREATE TABLE + COMMENT ON × N + 索引）会被拆成
-   多条任务，逐条平铺后看不出结构。这里给链内任务标注所属对象名，并在组首行
-   （CREATE TABLE）加分隔线，让「一张表一段」一眼可辨。
-   不做折叠：任务列表是服务端分页 + 10s 轮询刷新，折叠会跨页断裂且状态反复重置；
-   完整的组级折叠需后端按组分页，留待后续迭代。 */
-const rowTargetName = (record) => resolveStatementGroup(record?.sql)?.name || ''
-
+/* 建表链组首行（CREATE TABLE）：与上一张表的任务在视觉上分段（组内标注已按需求移除） */
 const taskRowClass = (record) => {
   const target = resolveStatementGroup(record?.sql)
   return target?.kind === 'create_table' ? 'task-row-group-start' : ''
@@ -542,28 +534,12 @@ onMounted(() => {
 }
 
 .sql-link {
-  /* SQL 文本完整展示：不截断、不省略，长语句自动换行 */
-  white-space: normal;
-  word-break: break-all;
-  /* antd 的 a 走 colorLink 不吃主题色，这里显式覆盖为主题色 */
-  color: var(--gi-color-primary);
-}
-
-/* 建表链对象标注：同一张表的 CREATE TABLE / COMMENT ON / 索引任务共用同一标注 */
-.task-target-tag {
-  display: inline-block;
-  max-width: 120px;
-  margin-right: 6px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: #f2f3f5;
-  color: #5f5e5a;
-  font-size: 12px;
-  line-height: 18px;
+  /* 单行省略展示（列级 ellipsis 负责截断），点击可查看完整 SQL */
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
+  /* antd 的 a 走 colorLink 不吃主题色，这里显式覆盖为主题色 */
+  color: var(--gi-color-primary);
 }
 
 /* 建表链组首行（CREATE TABLE）：与上一张表的任务在视觉上分段 */
