@@ -164,6 +164,11 @@ type InsightOrderTasks struct {
 	SQL      string          `gorm:"type:mediumtext;null;comment:SQL语句" json:"sql"`
 	Progress models.EnumType `gorm:"type:ENUM('PENDING', 'EXECUTING', 'COMPLETED', 'FAILED');default:'PENDING';comment:进度" json:"progress"`
 	Result   datatypes.JSON  `gorm:"type:json;null;default:null;comment:执行结果" json:"result"`
+	// 任务级真实执行时间：created_at 是任务生成时刻（审批通过拆分任务时），
+	// updated_at 是行最后更新时刻，拿它们当「开始/结束时间」会让待执行任务
+	// 显示成 开始=结束 的假象。落列后在执行循环里随进度流转写入。
+	StartedAt  models.LocalTime `gorm:"null;comment:任务开始执行时间" json:"started_at"`
+	FinishedAt models.LocalTime `gorm:"null;comment:任务结束执行时间" json:"finished_at"`
 }
 
 func (InsightOrderTasks) TableName() string {

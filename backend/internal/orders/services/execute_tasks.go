@@ -667,10 +667,10 @@ func runOrderTasks(ctx context.Context, orderID, username string, policies Execu
 			continue
 		}
 
-		// 更新当前任务进度为执行中
+		// 更新当前任务进度为执行中，同时落任务级开始时间
 		if tx = global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 			Where("task_id=?", task.TaskID).
-			Update("progress", "EXECUTING"); tx.Error != nil {
+			Updates(map[string]any{"progress": "EXECUTING", "started_at": time.Now()}); tx.Error != nil {
 			global.App.Log.Error(tx.Error)
 			return tx.Error
 		}
@@ -685,7 +685,7 @@ func runOrderTasks(ctx context.Context, orderID, username string, policies Execu
 		if err != nil && backupFailure(err) {
 			global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 				Where("task_id=?", task.TaskID).
-				Updates(map[string]any{"progress": "COMPLETED", "result": data})
+				Updates(map[string]any{"progress": "COMPLETED", "result": data, "finished_at": time.Now()})
 			writeExecuteLog(orderID, username, fmt.Sprintf("任务 %s 已执行成功，但备份失败：%v", task.TaskID, err))
 			succeeded = append(succeeded, task)
 			if policies.backupPolicy() == BackupPolicyContinue {
@@ -709,7 +709,7 @@ func runOrderTasks(ctx context.Context, orderID, username string, policies Execu
 			}
 			global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 				Where("task_id=?", task.TaskID).
-				Updates(map[string]any{"progress": taskProgress, "result": data})
+				Updates(map[string]any{"progress": taskProgress, "result": data, "finished_at": time.Now()})
 			writeExecuteLog(orderID, username, fmt.Sprintf("执行任务 %s 失败：%v", task.TaskID, err))
 
 			switch policies.errorPolicy() {
@@ -726,7 +726,7 @@ func runOrderTasks(ctx context.Context, orderID, username string, policies Execu
 
 		global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 			Where("task_id=?", task.TaskID).
-			Updates(map[string]any{"progress": "COMPLETED", "result": data})
+			Updates(map[string]any{"progress": "COMPLETED", "result": data, "finished_at": time.Now()})
 
 		// 工单里建库/删库成功后同样要立刻失效元数据快照：
 		// 审批通过建出来的库，如果还要等定时任务，审批人和申请人都会以为「没建成功」。
@@ -815,7 +815,7 @@ func (s *ExecuteTaskService) Run() (err error) {
 		return global.App.DB.Transaction(func(tx *gorm.DB) error {
 			if tx = tx.Model(&ordersModels.InsightOrderTasks{}).
 				Where("task_id=? and order_id=?", s.TaskID, s.OrderID).
-				Updates(map[string]any{"progress": "EXECUTING", "executor": s.Username}); tx.Error != nil {
+				Updates(map[string]any{"progress": "EXECUTING", "executor": s.Username, "started_at": time.Now()}); tx.Error != nil {
 				global.App.Log.Error(tx.Error)
 				return tx.Error
 			}
@@ -848,7 +848,7 @@ func (s *ExecuteTaskService) Run() (err error) {
 	if err != nil && backupFailure(err) {
 		global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 			Where("task_id=? and order_id=?", s.TaskID, s.OrderID).
-			Updates(map[string]any{"progress": "COMPLETED", "result": data})
+			Updates(map[string]any{"progress": "COMPLETED", "result": data, "finished_at": time.Now()})
 		writeExecuteLog(s.OrderID, s.Username, fmt.Sprintf("任务 %s 已执行成功，但备份失败：%v", s.TaskID, err))
 		if policies.backupPolicy() == BackupPolicyStop {
 			writeExecuteLog(s.OrderID, s.Username, "按「备份失败后停止任务」策略：请检查备份/回滚依据是否符合预期后再继续")
@@ -871,7 +871,7 @@ func (s *ExecuteTaskService) Run() (err error) {
 		}
 		global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 			Where("task_id=? and order_id=?", s.TaskID, s.OrderID).
-			Updates(map[string]any{"progress": taskProgress, "result": data})
+			Updates(map[string]any{"progress": taskProgress, "result": data, "finished_at": time.Now()})
 		_ = updateOrderStatusAfterExecution(s.OrderID)
 		_ = global.App.DB.Transaction(func(tx *gorm.DB) error {
 			return WriteOrderLog(tx, s.OrderID, s.Username, fmt.Sprintf("执行任务失败：%v", err))
@@ -882,7 +882,7 @@ func (s *ExecuteTaskService) Run() (err error) {
 	// 没有错误返回，更新任务状态为已完成
 	global.App.DB.Model(&ordersModels.InsightOrderTasks{}).
 		Where("task_id=? and order_id=?", s.TaskID, s.OrderID).
-		Updates(map[string]any{"progress": "COMPLETED", "result": data})
+		Updates(map[string]any{"progress": "COMPLETED", "result": data, "finished_at": time.Now()})
 
 	// 操作历史：执行成功
 	writeExecuteLog(s.OrderID, s.Username, fmt.Sprintf("任务执行成功，SQL：%s", truncateSQLHint(task.SQL)))

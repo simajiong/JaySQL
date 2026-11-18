@@ -78,6 +78,14 @@
               </a>
             </template>
 
+            <template v-else-if="column.key === 'started_at'">
+              <span>{{ getTaskStartTime(record) }}</span>
+            </template>
+
+            <template v-else-if="column.key === 'finished_at'">
+              <span>{{ getTaskEndTime(record) }}</span>
+            </template>
+
             <template v-else-if="column.key === 'result'">
               <span>{{ getExecutionDetail(record) }}</span>
             </template>
@@ -275,8 +283,11 @@ const uiData = reactive({
     { title: '行号', key: 'index', width: 72, fixed: 'left' },
     // 执行详情列宽减半（原为自适应剩余宽度），释放的宽度全部分配给 SQL 文本列
     { title: 'SQL文本', dataIndex: 'sql', key: 'sql', ellipsis: true, width: 440 },
-    { title: '开始时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
-    { title: '结束时间', dataIndex: 'updated_at', key: 'updated_at', width: 180 },
+    // 任务级真实执行时间（started_at/finished_at 由执行循环随进度流转写入）：
+    // created_at 是任务生成时刻，updated_at 是行最后更新时刻，拿它们当开始/结束
+    // 时间会让待执行任务显示成「开始=结束」的假象
+    { title: '开始时间', dataIndex: 'started_at', key: 'started_at', width: 180 },
+    { title: '结束时间', dataIndex: 'finished_at', key: 'finished_at', width: 180 },
     { title: '执行状态', dataIndex: 'progress', key: 'progress', width: 120 },
     { title: '执行详情', key: 'result', ellipsis: true, width: 240 },
     { title: '备份状态', key: 'backup', width: 120 },
@@ -309,16 +320,36 @@ const parseResult = (record) => {
   }
 }
 
+// 执行详情必须与执行状态同口径：默认文案由 progress 决定，
+// 只有任务真的到了终态才能显示「执行成功」，避免待执行任务
+// 在 result 为空时被兜底文案误标成「执行成功」
 const getExecutionDetail = (record) => {
   const result = parseResult(record)
-  return result.error || result.execute_log || '执行成功'
+  const detail = result.error || result.execute_log
+  if (detail) return detail
+  if (record.progress === 'COMPLETED') return '执行成功'
+  if (record.progress === 'FAILED') return '执行失败'
+  if (record.progress === 'EXECUTING') return '执行中…'
+  return '-'
 }
 
 const getBackupStatus = (record) => {
+  // 未执行的任务没有备份动作可言，显示 '-' 而不是误标成「已跳过」
+  if (record.progress === 'PENDING') return '-'
   const result = parseResult(record)
   if (result.backup_status) return result.backup_status
   if (result.backup_cost_time) return '备份成功'
   return '已跳过'
+}
+
+// 时间列：新数据用任务级 started_at/finished_at；存量任务两列为空，
+// 已执行的老任务回退 updated_at（终态写入时恰好是结束时刻），
+// 未执行的老任务显示 '-'
+const getTaskStartTime = (record) => record.started_at || record.created_at || '-'
+const getTaskEndTime = (record) => {
+  if (record.finished_at) return record.finished_at
+  if (record.progress === 'COMPLETED' || record.progress === 'FAILED') return record.updated_at || '-'
+  return '-'
 }
 
 /* 对象归属标注：Oracle 一条建表链（CREATE TABLE + COMMENT ON × N + 索引）会被拆成
