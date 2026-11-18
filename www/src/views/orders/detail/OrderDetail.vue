@@ -57,7 +57,18 @@
                   {{ index + 1 }}
                 </template>
                 <template v-else-if="column.key === 'sql'">
-                  <span class="exec-sql-text" :title="record.sql">{{ record.sql }}</span>
+                  <div class="exec-sql-wrap">
+                    <span class="exec-sql-text" :title="record.sql">{{ record.sql }}</span>
+                    <!-- 原「详情」列的结果摘要并入 SQL 下方副行（tooltip 保留完整 execute_log），数据不丢失 -->
+                    <span
+                      v-if="taskDetail(record)"
+                      class="exec-sql-summary"
+                      :class="{ 'is-failed': taskFailed(record) }"
+                      :title="taskDetailFull(record)"
+                    >
+                      {{ taskDetail(record) }}
+                    </span>
+                  </div>
                 </template>
                 <template v-else-if="column.key === 'start_time'">
                   {{ taskStartEnd(record).start || '-' }}
@@ -73,23 +84,16 @@
                 </template>
                 <template v-else-if="column.key === 'action'">
                   <a-space size="middle">
+                    <!-- 失败任务：红色「失败原因」入口替代原详情列的失败标签，点击打开失败抽屉 -->
+                    <a v-if="taskFailed(record)" class="exec-failure-link" @click="openFailureDrawer(record)">
+                      失败原因
+                    </a>
                     <a class="exec-detail-link" @click="showTaskResult(record)">详情</a>
                     <!-- 回滚 SQL 入口：仅备份成功（有回滚 SQL）的任务渲染，避免死链接 -->
                     <a v-if="taskRollbackSql(record)" class="exec-rollback-link" @click="showTaskResult(record)">
                       回滚 SQL
                     </a>
                   </a-space>
-                </template>
-                <template v-else-if="column.key === 'detail'">
-                  <!-- 失败任务：完整错误原文截断后看不全，改为「失败」标签 + 「查看」入口，
-                       点击打开抽屉展示结构化信息与可复制的完整原文 -->
-                  <span v-if="taskFailed(record)" class="exec-detail-failed">
-                    <span class="exec-detail-failed-tag">失败</span>
-                    <a class="exec-detail-link" @click="openFailureDrawer(record)">查看</a>
-                  </span>
-                  <a-tooltip v-else :title="taskDetailFull(record)">
-                    <span class="exec-detail-text">{{ taskDetail(record) || '-' }}</span>
-                  </a-tooltip>
                 </template>
               </template>
             </a-table>
@@ -1216,12 +1220,13 @@ watch(hasExecutionTasks, (val) => {
 
 const execResultColumns = [
   { title: '序号', key: 'seq', width: 64 },
+  // 原「详情」列已删除：结果摘要并入 SQL语句列副行、失败入口移到操作列，
+  // 释放的宽度由不定宽的 SQL语句列自动吸收
   { title: 'SQL语句', dataIndex: 'sql', key: 'sql', ellipsis: true },
   { title: '开始执行时间', key: 'start_time', width: 170 },
   { title: '结束执行时间', key: 'end_time', width: 170 },
   { title: '备份状态', key: 'backup', width: 120 },
-  { title: '详情', key: 'detail', width: '18%', ellipsis: true },
-  { title: '操作', key: 'action', width: 130 },
+  { title: '操作', key: 'action', width: 150 },
 ]
 
 const execResultPagination = {
@@ -1633,25 +1638,42 @@ onMounted(async () => {
 }
 
 /* ===== 执行结果 Tab ===== */
-.exec-sql-text,
-.exec-detail-text {
+.exec-sql-text {
   color: var(--gi-color-text, rgba(0, 0, 0, 0.88));
 }
 
-/* 执行失败的详情列：标签 + 查看入口，不再靠截断文本猜原因 */
-.exec-detail-failed {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+/* SQL 单元格：主行 SQL + 副行执行结果摘要（原详情列内容并入） */
+.exec-sql-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.exec-detail-failed-tag {
-  padding: 0 6px;
-  border-radius: 3px;
-  background: #ff4d4f;
-  color: #fff;
+.exec-sql-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-sql-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #86909c;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
+}
+
+.exec-sql-summary.is-failed {
+  color: #ff4d4f;
+}
+
+/* 操作列的失败原因入口（原详情列失败标签的替代） */
+.exec-failure-link {
+  font-size: 14px;
+  color: #ff4d4f;
 }
 
 .exec-detail-link {
