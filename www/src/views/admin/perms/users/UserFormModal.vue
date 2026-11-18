@@ -52,13 +52,7 @@
               </template>
             </a-input-password>
           </a-form-item>
-          <a-form-item
-            v-if="!isCreate"
-            label="重置密码"
-            name="reset_password"
-            :help="hintResetPwd"
-            :validate-status="formData.reset_password ? '' : ''"
-          >
+          <a-form-item v-if="!isCreate" label="重置密码" name="reset_password" has-feedback :help="hintResetPwd">
             <a-input-password
               v-model:value="formData.reset_password"
               placeholder="不修改请留空；填写则按此密码重置用户登录密码"
@@ -750,8 +744,8 @@ watch(
 const hintResetPwd = computed(() => {
   const v = (formData.value?.reset_password || '').trim()
   if (!v) return '出于安全考虑，系统不存储明文密码，无法直接查看原密码；管理员仅可在此重置为新密码'
-  if (v.length < 7) return '密码长度至少 7 位'
-  if (!regPassword.test(v)) return '建议包含大小写字母、数字和特殊字符'
+  // 不满足强度规则时不返回 help 文案，让校验规则的红色错误提示正常展示
+  if (!regPassword.test(v)) return undefined
   return '点击确定后用户需使用新密码登录'
 })
 
@@ -1039,6 +1033,21 @@ const rules = computed(() => ({
         if (value.length < 8) return Promise.reject(new Error('密码长度至少8个字符'))
         if (!regPassword.test(value))
           return Promise.reject(new Error('密码必须包含大小写字母、数字和特殊字符'))
+        return Promise.resolve()
+      },
+      trigger: 'blur',
+    },
+  ],
+  reset_password: [
+    {
+      // 管理员重置密码：留空表示不修改；填写则强制强度校验，阻止弱密码提交
+      validator: (_, value) => {
+        const v = String(value || '').trim()
+        if (!v) return Promise.resolve()
+        if (!regPassword.test(v))
+          return Promise.reject(
+            new Error('密码至少7个字符，必须包含大写字母、小写字母、数字和特殊字符'),
+          )
         return Promise.resolve()
       },
       trigger: 'blur',
