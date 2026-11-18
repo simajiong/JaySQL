@@ -64,9 +64,8 @@
             </template>
 
             <template v-else-if="column.key === 'progress'">
-              <a-tag :color="getTaskStatusMeta(record.progress).color">
-                {{ getTaskStatusMeta(record.progress).text }}
-              </a-tag>
+              <!-- 纯文字展示：与其他列同字体字号，不再用 tag 胶囊 -->
+              <span>{{ getTaskStatusMeta(record.progress).text }}</span>
             </template>
 
             <template v-else-if="column.key === 'sql'">
@@ -281,8 +280,8 @@ const uiData = reactive({
   tableData: [],
   tableColumns: [
     { title: '行号', key: 'index', width: 72, fixed: 'left' },
-    // 执行详情列宽减半（原为自适应剩余宽度），释放的宽度全部分配给 SQL 文本列
-    { title: 'SQL文本', dataIndex: 'sql', key: 'sql', ellipsis: true, width: 440 },
+    // SQL 文本完整展示：不定宽、不省略，长 SQL 自动换行
+    { title: 'SQL文本', dataIndex: 'sql', key: 'sql' },
     // 任务级真实执行时间（started_at/finished_at 由执行循环随进度流转写入）：
     // created_at 是任务生成时刻，updated_at 是行最后更新时刻，拿它们当开始/结束
     // 时间会让待执行任务显示成「开始=结束」的假象
@@ -543,14 +542,11 @@ onMounted(() => {
 }
 
 .sql-link {
-  display: inline-block;
-  max-width: calc(100% - 40px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* SQL 文本完整展示：不截断、不省略，长语句自动换行 */
+  white-space: normal;
+  word-break: break-all;
   /* antd 的 a 走 colorLink 不吃主题色，这里显式覆盖为主题色 */
   color: var(--gi-color-primary);
-  vertical-align: middle;
 }
 
 /* 建表链对象标注：同一张表的 CREATE TABLE / COMMENT ON / 索引任务共用同一标注 */
