@@ -65,6 +65,12 @@
                 <template v-else-if="column.key === 'end_time'">
                   {{ taskStartEnd(record).end || '-' }}
                 </template>
+                <template v-else-if="column.key === 'progress'">
+                  <!-- 执行状态：纯文字与任务页同口径；仅失败标红，其余默认字体 -->
+                  <span :class="['exec-progress-text', { 'is-failed': record.progress === 'FAILED' }]">
+                    {{ getTaskStatusMeta(record.progress).text }}
+                  </span>
+                </template>
                 <template v-else-if="column.key === 'backup'">
                   <!-- 备份状态：与任务页同口径（backup_status 文案，缺失时回退 backup_cost_time） -->
                   <span :class="['exec-backup-status', backupStatusClass(record)]">
@@ -381,6 +387,7 @@ import { useOrderCreatePrefillStore } from '@/store/prefill'
 import { message } from 'ant-design-vue'
 import { CaretRightOutlined, CheckCircleFilled, CloseCircleFilled, CopyOutlined, EyeOutlined, WarningFilled } from '@ant-design/icons-vue'
 import { buildStatementGroups, groupsAreUseful } from '../shared/statementGroups'
+import { getTaskStatusMeta } from '../shared/orderStatusMeta'
 import CodeMirror from '@/components/edit/Codemirror.vue'
 import TaskResult from '../tasks/TaskResult.vue'
 import HeaderContent from './HeaderContent.vue'
@@ -1214,6 +1221,7 @@ const execResultColumns = [
   { title: 'SQL语句', dataIndex: 'sql', key: 'sql', ellipsis: true },
   { title: '开始执行时间', key: 'start_time', width: 170 },
   { title: '结束执行时间', key: 'end_time', width: 170 },
+  { title: '执行状态', key: 'progress', width: 100 },
   { title: '备份状态', key: 'backup', width: 120 },
   { title: '操作', key: 'action', width: 150 },
 ]
@@ -1609,6 +1617,11 @@ onMounted(async () => {
 /* ===== 执行结果 Tab ===== */
 .exec-sql-text {
   color: var(--gi-color-text, rgba(0, 0, 0, 0.88));
+}
+
+/* 执行状态列：纯文字，仅失败标红 */
+.exec-progress-text.is-failed {
+  color: #ff4d4f;
 }
 
 /* 操作列的失败原因入口（原详情列失败标签的替代） */
