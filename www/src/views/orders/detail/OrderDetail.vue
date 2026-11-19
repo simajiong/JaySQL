@@ -57,18 +57,7 @@
                   {{ index + 1 }}
                 </template>
                 <template v-else-if="column.key === 'sql'">
-                  <div class="exec-sql-wrap">
-                    <span class="exec-sql-text" :title="record.sql">{{ record.sql }}</span>
-                    <!-- 原「详情」列的结果摘要并入 SQL 下方副行（tooltip 保留完整 execute_log），数据不丢失 -->
-                    <span
-                      v-if="taskDetail(record)"
-                      class="exec-sql-summary"
-                      :class="{ 'is-failed': taskFailed(record) }"
-                      :title="taskDetailFull(record)"
-                    >
-                      {{ taskDetail(record) }}
-                    </span>
-                  </div>
+                  <span class="exec-sql-text" :title="record.sql">{{ record.sql }}</span>
                 </template>
                 <template v-else-if="column.key === 'start_time'">
                   {{ taskStartEnd(record).start || '-' }}
@@ -1245,26 +1234,6 @@ const taskStartEnd = (task) => {
   return { start: times[0] || '', end: times.length > 1 ? times[times.length - 1] : '' }
 }
 
-// 详情列：优先错误信息，其次 execute_log 的 SQL 执行结果行；
-// 成功任务无额外输出时显示「执行成功」，失败任务无信息时显示 '-'
-const taskDetail = (task) => {
-  const result = parseTaskResult(task)
-  const err = String(result.error || '').trim()
-  if (err) return err
-  const lines = String(result.execute_log || '')
-    .split('\n')
-    .filter((line) => line.includes('SQL执行'))
-  const line = (lines[lines.length - 1] || '').replace(/^\[[^\]]*\]\s*/, '')
-  if (line) return line
-  return task.progress === 'COMPLETED' ? '执行成功' : ''
-}
-
-const taskDetailFull = (task) => {
-  const result = parseTaskResult(task)
-  const err = String(result.error || '').trim()
-  return err || String(result.execute_log || '')
-}
-
 /* ===== 备份状态 / 回滚 SQL 入口 =====
    数据全部来自 task.result（执行时由 Binlog 生成的回滚 SQL），零新增接口。
    任务页早就有这套展示，这里把同一份数据在工单详情页透出。 */
@@ -1640,34 +1609,6 @@ onMounted(async () => {
 /* ===== 执行结果 Tab ===== */
 .exec-sql-text {
   color: var(--gi-color-text, rgba(0, 0, 0, 0.88));
-}
-
-/* SQL 单元格：主行 SQL + 副行执行结果摘要（原详情列内容并入） */
-.exec-sql-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.exec-sql-text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.exec-sql-summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #86909c;
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.exec-sql-summary.is-failed {
-  color: #ff4d4f;
 }
 
 /* 操作列的失败原因入口（原详情列失败标签的替代） */
